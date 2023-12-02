@@ -52,7 +52,7 @@ $ fetch --nohooks chromium
 
 如果您不需要完整的repo历史记录，可以通过向`fetch`添加`--no-history`参数来节省大量时间。
 
-当`fetch`完成后，它将在工作目录中创建一个`.gclient`隐藏文件和一个名为`src`的目录。接下来的介绍都假定您已经切换到了`src`目录：
+当`fetch`完成后，它将在工作目录中创建一个`.gclient`隐藏文件和一个名为`src`的目录。**接下来的介绍都假定您已经切换到了`src`目录**：
 
 ```shell
 $ cd src
@@ -93,9 +93,11 @@ $ gclient sync
 
 ## 三、构建配置
 
-Chromium Loongarch64交叉构建所需的`交叉编译工具链`和`sysroot`我们会依据构建版本额外提供，与对应版本适配patch放在对应版本`chromiumXXX`目录里，里面`README.md`会有它们使用的详细介绍。
+Chromium Loongarch64交叉构建所需的`交叉编译工具链`和`sysroot`我们会依据构建版本额外提供，与对应版本适配patch都放在对应版本`chromiumXXX`目录里。
 
-要想继续进行下一步，**必须先完成工具链和sysroot的配置及patch的打入**(按照chromiumXXX中README.md完成)。如果没有提供您想编译的版本，您可以先取相近版本进行尝试，如果有问题可以再与我们联系。
+要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium120版本，那么先完成[Chromium120 构建配置](chromium120/README.md)。
+
+如果没有提供您想编译的版本，您可以先用相近的版本进行尝试，如果有问题可以与我们联系（service@loongson.cn）。
 
 Chromium使用[Ninja](https://ninja-build.org)作为主要构建工具，使用称为[GN](https://gn.googlesource.com/gn/+/main/docs/quick_start.md)的工具生成.ninja文件。
 您可以创建任意数量的具有不同配置的构建目录。创建一个构建目录，请运行：
