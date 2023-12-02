@@ -87,15 +87,16 @@ $ gclient sync
 
 第二个命令是将同步依赖项到相应的版本，并根据需要重新运行`hooks`。
 
-
 要想知道更加详细的`Linux chromium`源码获取，可以参考[Chromium官方文档](https://chromium.googlesource.com/chromium/src/+/main/docs/linux/build_instructions.md)。
-
 
 ## 三、构建配置
 
 Chromium Loongarch64交叉构建所需的`交叉编译工具链`和`sysroot`我们会依据构建版本额外提供，与对应版本适配patch都放在对应版本`chromiumXXX`目录里。
 
-要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium120版本，那么先完成[Chromium120 构建配置](chromium120/README.md)。
+> 目前仅提供chromium98、chromium114和chromium120这三个版本的交叉构建说明。
+> 其中chromium98只提供旧世界构建支持，chromium114和chromium120同时提供新旧世界构建支持。
+
+要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium120版本，那么必须先完成[Chromium120 构建配置](chromium120/README.md)。
 
 如果没有提供您想编译的版本，您可以先用相近的版本进行尝试，如果有问题可以与我们联系（service@loongson.cn）。
 
