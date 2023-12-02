@@ -8,20 +8,26 @@
 
 ### 旧世界构建配置
 
-主要是先获取`old-world`目录下的文件：
+主要是先获取构建所需的文件：
 
 ```
-├── 0001-CH98-old-world-Add-llvm-cross-build-support-for-loon.patch
-├── debian_sid_loong64-sysroot.tar.bz2
-└── llvm_install_15.0.7.tar.bz2
+└── sysroot
+    └── debian_sid_loong64-sysroot.tar.bz2
+
+├── cross-toolchain
+│   ├── llvm_install_15.0.7.tar.bz2
+
+├── chromium98
+│   ├── old-world
+│   │   └── 0001-CH98-old-world-Add-llvm-cross-build-support-for-loon.patch
 ```
 
 然后基于已获取chromium源码的`src`目录进行如下操作：
 
-`debian_bullseye_loong64-sysroot.tar.bz2`解压放入`build/linux`目录下：
+`debian_sid_loong64-sysroot.tar.bz2`解压放入`build/linux`目录下：
 
 ```shell
-$ tar -xjvf debian_bullseye_loong64-sysroot.tar.bz2 -C build/linux/
+$ tar -xjvf debian_sid_loong64-sysroot.tar.bz2 -C build/linux/
 ```
 
 `llvm_install_15.0.7.tar.bz2`解压放入`/opt/llvm_chromium`目录下：

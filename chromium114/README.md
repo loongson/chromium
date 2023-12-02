@@ -10,12 +10,18 @@
 
 ### 1. 旧世界构建配置
 
-主要是先获取`old-world`目录下的文件：
+主要是先获取构建所需的文件：
 
 ```
-├── 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
-├── debian_bullseye_loong64-sysroot.tar.bz2
-└── llvm_install_15.0.7.tar.bz2
+└── sysroot
+    ├── debian_bullseye_loong64-sysroot.tar.bz2
+
+├── chromium114
+│   ├── old-world
+│   │   └── 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
+
+├── cross-toolchain
+│   ├── llvm_install_15.0.7.tar.bz2
 ```
 
 然后基于已获取chromium源码的`src`目录进行如下操作：
@@ -57,12 +63,18 @@ $ cd -  （返回至src目录）
 
 ### 新世界构建配置
 
-主要是先获取`new-world`目录下的文件：
+主要是先获取构建所需的文件：
 
 ```
-├── 0001-CH114-new-world-Add-llvm-cross-build-support-for-loo.patch
-├── debian_bullseye_loongarch64-sysroot.tar.bz2
-└── Release+Asserts.tar.bz2
+└── sysroot
+    ├── debian_bullseye_loongarch64-sysroot.tar.bz2
+
+├── cross-toolchain
+│   └── Release+Asserts.tar.bz2
+
+├── chromium114
+│   ├── new-world
+│   │   └── 0001-CH114-new-world-Add-llvm-cross-build-support-for-loo.patch
 ```
 
 然后基于已获取chromium源码的`src`目录进行如下操作：

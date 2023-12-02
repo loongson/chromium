@@ -91,7 +91,9 @@ $ gclient sync
 
 ## 三、构建配置
 
-Chromium Loongarch64交叉构建所需的`交叉编译工具链`和`sysroot`我们会依据构建版本额外提供，与对应版本适配patch都放在对应版本`chromiumXXX`目录里。
+`cross-toolchain`目录和`sysroot`目录分别存放着chromium loongarch64交叉构建所需的交叉编译工具链和sysroot。
+
+`chromiumXXX`目录存放着对应版本新旧世界构建适配patch及构建配置说明。
 
 > 目前仅提供chromium98、chromium114和chromium120这三个版本的交叉构建说明。
 > 其中chromium98只提供旧世界构建支持，chromium114和chromium120同时提供新旧世界构建支持。
