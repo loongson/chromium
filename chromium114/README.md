@@ -1,19 +1,19 @@
-# Chromium120 构建配置
+# Chromium114 构建配置
 
-## 目录结构说明
+## 一、目录结构说明
 
 `new-world`代表新世界（ABI2.0）
 
 `old-world`代表旧世界（ABI1.0）
 
-## 构建配置说明
+## 二、构建配置说明
 
-### 旧世界构建配置
+### 1. 旧世界构建配置
 
 主要是先获取`old-world`目录下的文件：
 
 ```
-├── 0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch
+├── 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
 ├── debian_bullseye_loong64-sysroot.tar.bz2
 └── llvm_install_15.0.7.tar.bz2
 ```
@@ -34,15 +34,16 @@ $ tar -xjvf llvm_install_15.0.7.tar.bz2 -C /opt/llvm_chromium/
 
 **注意：** 默认将交叉编译器工具放入/opt/llvm_chromium目录，可以任意指定目录，但若修改需要作如下调整：
 
-> 修改`0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch`文件，将里面`/opt/llvm_chromium/llvm_install_15.0.7`全部修改成替换您指定的目录。
+> 修改`0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch`文件，将里面`/opt/llvm_chromium/llvm_install_15.0.7`全部修改替换成您指定的目录。
 
-`0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch`文件打入源码：
+`0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch`文件打入源码：
 
 ```shell
-$ patch -Np1 -i 0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch 
+$ patch -Np1 -i 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
 ```
 
 完成上述操作后，我们还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：
+
 
 ```shell
 $ cd third_party/ffmpeg
@@ -52,15 +53,16 @@ $ ./chromium/scripts/generate_gn.py
 $ cd -  （返回至src目录）
 ```
 
-至此，Chromium120旧世界构建配置已完成，您可以继续完成后面的[交叉构建](../#三构建配置)
+至此，Chromium114旧世界构建配置已完成，您可以继续完成后面的[交叉构建](../#三构建配置)
 
 ### 新世界构建配置
 
 主要是先获取`new-world`目录下的文件：
 
 ```
-├── 0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch
-└── debian_bullseye_loongarch64-sysroot.tar.bz2
+├── 0001-CH114-new-world-Add-llvm-cross-build-support-for-loo.patch
+├── debian_bullseye_loongarch64-sysroot.tar.bz2
+└── Release+Asserts.tar.bz2
 ```
 
 然后基于已获取chromium源码的`src`目录进行如下操作：
@@ -71,13 +73,21 @@ $ cd -  （返回至src目录）
 $ tar -xjvf debian_bullseye_loong64-sysroot.tar.bz2 -C build/linux/
 ```
 
-`0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch`文件打入源码：
+`Release+Asserts.tar.bz2`替换`third_party/llvm-build/Release+Asserts/`目录：
 
 ```shell
-$ patch -Np1 -i 0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch 
+$ rm -rf third_party/llvm-build/Release+Asserts
+$ tar -xjvf Release+Asserts.tar.bz2 -C third_party/llvm-build/
 ```
 
-新世界无需提供编译器，直接使用chromium自带的`third_party/llvm-build/Release+Asserts/`即可，无需额外配置。
+**替换说明：** 这里更新自带llvm，主要是为了支持loongarch64 lld构建（loongarch64 lld从chromium社区自带llvm-18.0.0才正式支持），如果您构建的chromium版本自带的llvm版本超过18.0.0，这里就无需替换（如chromium120就无需替换，直接用社区自带的即可）。
+
+`0001-CH114-new-world-Add-llvm-cross-build-support-for-loo.patch`文件打入源码：
+
+```shell
+$ patch -Np1 -i 0001-CH114-new-world-Add-llvm-cross-build-support-for-loo.patch 
+```
+
 完成上述操作后，我们同样还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：
 
 ```shell
@@ -88,4 +98,4 @@ $ ./chromium/scripts/generate_gn.py
 $ cd -  （返回至src目录）
 ```
 
-至此，Chromium120新世界构建配置已完成，您可以继续完成后面的[交叉构建](../#三构建配置)
+至此，Chromium114新世界构建配置已完成，您可以继续完成后面的[交叉构建](../#三构建配置)
