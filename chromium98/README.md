@@ -46,6 +46,8 @@ $ tar -xjvf llvm_install_15.0.7.tar.bz2 -C /opt/llvm_chromium/
 $ patch -Np1 -i 0001-CH98-old-world-Add-llvm-cross-build-support-for-loo.patch
 ```
 
+**注意：** 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（lbrowser@loongson.cn）
+
 完成上述操作后，我们还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：
 
 
