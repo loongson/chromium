@@ -48,7 +48,7 @@ $ tar -xjvf llvm_install_15.0.7.tar.bz2 -C /opt/llvm_chromium/
 $ patch -Np1 -i 0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch 
 ```
 
-**注意：** 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（lbrowser@loongson.cn）
+**注意：** 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（browser@loongson.cn）
 
 完成上述操作后，我们还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：
 
@@ -89,7 +89,7 @@ $ tar -xjvf debian_bullseye_loong64-sysroot.tar.bz2 -C build/linux/
 $ patch -Np1 -i 0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch 
 ```
 
-**注意：** 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（lbrowser@loongson.cn）
+**注意：** 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（browser@loongson.cn）
 
 新世界无需提供编译器，直接使用chromium自带的`third_party/llvm-build/Release+Asserts/`即可，无需额外配置。
 完成上述操作后，我们同样还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：

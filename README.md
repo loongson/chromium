@@ -100,7 +100,7 @@ $ gclient sync
 
 > chromium98适配patch是基于98.0.4758.50生成的；chromium114适配patch是基于114.0.5735.17生成的；chromium120适配patch是基于120.0.6099.0生成的。
 >
-> 如果您下载的版本刚好是这些版本，是可以无缝打入的。但若有所偏离的话，可能会出现一些文件打不上的情况需要额外修补下。如果有问题可以与我们联系（lbrowser@loongson.cn）。
+> 如果您下载的版本刚好是这些版本，是可以无缝打入的。但若有所偏离的话，可能会出现一些文件打不上的情况需要额外修补下。如果有问题可以与我们联系（browser@loongson.cn）。
 
 要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium120版本，那么必须先完成[Chromium120 构建配置](chromium120/README.md)。
 
