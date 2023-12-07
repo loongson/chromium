@@ -14,7 +14,7 @@ Chromium是一个开源浏览器项目，旨在为所有用户构建一种更安
 * 至少100GB可用磁盘空间。
 * 必须已安装Git和Python v3.8+（必须指向Python v3.8+二进制文件）。如果您系统中没有适当版本，Depot_tools会在$depot_tools/python-bin中绑定适当版本的Python。
 
-大多数交叉构建在Ubuntu上进行，本文以20.04.2 LTS (Focal Fossa) ubuntu版本上进行构建介绍。
+大多数交叉构建在Ubuntu上进行，**本文以20.04.2 LTS (Focal Fossa) ubuntu版本上进行源码获取和构建介绍**。
 
 ### 2. 安装depot_tools工具
 
@@ -91,14 +91,18 @@ $ gclient sync
 
 ## 三、构建配置
 
-`cross-toolchain`目录和`sysroot`目录分别存放着chromium loongarch64交叉构建所需的交叉编译工具链和sysroot。
-
-`chromiumXXX`目录存放着对应版本新旧世界构建适配patch及构建配置说明。
+`cross-toolchain`目录和`sysroot`目录分别存放着chromium loongarch64交叉构建所需的交叉编译工具链和sysroot。`chromiumXXX`目录存放着对应版本新旧世界构建适配patch及构建配置说明。
 
 > 目前仅提供chromium98、chromium114和chromium120这三个版本的交叉构建说明。
 > 其中chromium98只提供旧世界构建支持，chromium114和chromium120同时提供新旧世界构建支持。
 
-要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium120版本，那么必须先完成[Chromium120 构建配置](chromium120/README.md)。如果没有提供您想编译的版本，您可以先用相近的版本进行尝试，如果有问题可以与我们联系（service@loongson.cn）。
+**需要额外注意的是适配patch的打入：**
+
+> chromium98适配patch是基于98.0.4758.50生成的；chromium114适配patch是基于114.0.5735.17生成的；chromium120适配patch是基于120.0.6099.0生成的。
+>
+> 如果您下载的版本刚好是这些版本，是可以无缝打入的。但若有所偏离的话，可能会出现一些文件打不上的情况需要额外修补下。如果有问题可以与我们联系（lbrowser@loongson.cn）。
+
+要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium120版本，那么必须先完成[Chromium120 构建配置](chromium120/README.md)。
 
 > chromium使用[Ninja](https://ninja-build.org)作为主要构建工具，使用称为[GN](https://gn.googlesource.com/gn/+/main/docs/quick_start.md)的工具生成.ninja文件。您可以创建任意数量的具有不同配置的构建目录。
 > 
