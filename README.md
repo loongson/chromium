@@ -65,6 +65,7 @@ $ cd src
 ```shell
 $ ./build/install-build-deps.sh
 ```
+**注意：** 如果系统没有安装默认工具链，请先安装：`sudo apt-get install clang lld nasm`。
 
 ### 5. 运行hooks
 
@@ -92,6 +93,12 @@ $ gclient sync
 ## 三、构建配置
 
 `cross-toolchain`目录和`sysroot`目录分别存放着chromium loongarch64交叉构建所需的交叉编译工具链和sysroot。`chromiumXXX`目录存放着对应版本新旧世界构建适配patch及构建配置说明。
+
+**注意：** 新旧世界在abi层面存在区别，3a5000/3a6000处理器都支持，但只能是其中一种。可以使用下面简单的方式判别您所使用的类型：
+```shell
+$ readelf -h a.out #查看输出中的Flags字段， '0x3' 表示旧世界， '0x43' 表示新世界
+```
+
 
 > 目前仅提供chromium98、chromium114和chromium120这三个版本的交叉构建说明。
 > 其中chromium98只提供旧世界构建支持，chromium114和chromium120同时提供新旧世界构建支持。

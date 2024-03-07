@@ -1,3 +1,4 @@
+在阅读该文件之前，建议您先去阅读[README](../#chromium-for-loongarch64-交叉构建)，以明白您正在做的事情。
 # Chromium98 构建配置
 
 ## 一、目录结构说明
@@ -53,10 +54,14 @@ $ patch -Np1 -i 0001-CH98-old-world-Add-llvm-cross-build-support-for-loo.patch
 
 ```shell
 $ cd third_party/ffmpeg
-$ ./chromium/scripts/build_ffmpeg.py linux
+$ ./chromium/scripts/build_ffmpeg.py linux --branding=Chrome
 $ ./chromium/scripts/copy_config.sh
 $ ./chromium/scripts/generate_gn.py
 $ cd -  （返回至src目录）
 ```
+**注意：** 请严格按照上述参数运行脚本。
+> build__fmpeg.py用于为linux系统下x64/arm64/loong64等平台生成编译配置。  
+> copy_config.sh用于将build_ffmpeg.py生成的配置信息更新到chromium/config对应的目录。  
+> generate_gn.py用于更新chromium的ffmpeg_generated.gni文件。
 
 至此，Chromium98旧世界构建配置已完成，您可以继续完成后面的[交叉构建](../#三构建配置)
