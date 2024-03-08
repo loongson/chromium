@@ -1,0 +1,3875 @@
+From e90610a2367e976239f1e6a040277876031b632b Mon Sep 17 00:00:00 2001
+From: Wang Qing <wangqing-hf@loongson.cn>
+Date: Fri, 1 Dec 2023 17:49:25 +0800
+Subject: [PATCH] [CH114-old-world] Add llvm cross build support for
+ loongarch64.
+
+---
+ base/system/sys_info.cc                       |    2 +
+ build/config/clang/clang.gni                  |    6 +-
+ build/config/compiler/BUILD.gn                |   12 +-
+ build/config/posix/BUILD.gn                   |    2 +-
+ build/config/sysroot.gni                      |    2 +
+ build/cross-build.sh                          |  135 +-
+ .../bubble/download_bubble_update_service.cc  |    6 +-
+ .../bubble/download_bubble_update_service.h   |    4 +-
+ .../printing/print_backend_service_manager.cc |    2 +-
+ .../printing/print_backend_service_manager.h  |    2 +-
+ chrome/installer/linux/common/apt.include     |    2 +
+ chrome/installer/linux/common/rpm.include     |    2 +-
+ chrome/installer/linux/debian/build.sh        |    2 +-
+ .../linux/debian/calculate_package_deps.py    |    3 +
+ chrome/installer/linux/rpm/build.sh           |    2 +-
+ .../metrics/debug/metrics_internals_utils.cc  |    2 +
+ components/variations/proto/study.proto       |    2 +
+ .../service/variations_field_trial_creator.cc |    2 +
+ media/base/cdm_promise_adapter.cc             |    6 +-
+ sandbox/features.gni                          |    3 +-
+ sandbox/linux/BUILD.gn                        |    1 +
+ sandbox/linux/bpf_dsl/linux_syscall_ranges.h  |    7 +
+ sandbox/linux/bpf_dsl/seccomp_macros.h        |   42 +
+ .../bpf_dsl_seccomp_unittest.cc               |    7 +-
+ .../seccomp-bpf-helpers/baseline_policy.cc    |    8 +-
+ .../baseline_policy_unittest.cc               |    8 +-
+ .../syscall_parameters_restrictions.cc        |    7 +-
+ .../linux/seccomp-bpf-helpers/syscall_sets.cc |   57 +-
+ .../linux/seccomp-bpf-helpers/syscall_sets.h  |   16 +-
+ sandbox/linux/seccomp-bpf/syscall.cc          |   32 +-
+ sandbox/linux/seccomp-bpf/syscall_unittest.cc |    1 +
+ sandbox/linux/services/credentials.cc         |    2 +-
+ sandbox/linux/services/syscall_wrappers.cc    |    2 +-
+ .../linux/syscall_broker/broker_process.cc    |   18 +-
+ .../syscall_broker/broker_process_unittest.cc |    2 +
+ .../remote_syscall_arg_handler_unittest.cc    |    4 +
+ sandbox/linux/system_headers/linux_seccomp.h  |    8 +
+ sandbox/linux/system_headers/linux_signal.h   |    5 +-
+ sandbox/linux/system_headers/linux_stat.h     |    2 +-
+ sandbox/linux/system_headers/linux_syscalls.h |    4 +
+ .../system_headers/loong64_linux_syscalls.h   | 1221 +++++++++++++++++
+ .../linux/bpf_cros_amd_gpu_policy_linux.cc    |    2 +-
+ sandbox/policy/linux/bpf_gpu_policy_linux.cc  |    2 +-
+ .../policy/linux/bpf_network_policy_linux.cc  |    2 +-
+ skia/BUILD.gn                                 |    2 +
+ .../ng/grid/ng_grid_layout_algorithm.cc       |   16 +-
+ .../boringssl/src/include/openssl/base.h      |    3 +
+ .../crashpad/client/crashpad_client_linux.cc  |    4 +
+ .../minidump/minidump_misc_info_writer.cc     |    2 +
+ .../crashpad/snapshot/capture_memory.cc       |    2 +-
+ .../crashpad/snapshot/cpu_architecture.h      |    5 +-
+ .../crashpad/crashpad/snapshot/cpu_context.h  |   23 +
+ .../snapshot/linux/cpu_context_linux.h        |   18 +-
+ .../linux/exception_snapshot_linux.cc         |   54 +
+ .../snapshot/linux/exception_snapshot_linux.h |    2 +
+ .../linux/exception_snapshot_linux_test.cc    |   21 +
+ .../snapshot/linux/process_reader_linux.cc    |    3 +
+ .../crashpad/snapshot/linux/signal_context.h  |   92 ++
+ .../snapshot/linux/system_snapshot_linux.cc   |    8 +
+ .../snapshot/linux/thread_snapshot_linux.cc   |    7 +
+ .../snapshot/linux/thread_snapshot_linux.h    |    2 +
+ .../crashpad/crashpad/test/linux/get_tls.cc   |    3 +
+ .../crashpad/crashpad/util/linux/ptracer.cc   |   11 +-
+ .../crashpad/util/linux/thread_info.h         |   14 +-
+ .../util/net/http_transport_libcurl.cc        |    2 +
+ third_party/ffmpeg/BUILD.gn                   |    4 +
+ .../ffmpeg/chromium/scripts/build_ffmpeg.py   |   37 +-
+ .../ffmpeg/chromium/scripts/copy_config.sh    |    2 +-
+ .../ffmpeg/chromium/scripts/generate_gn.py    |    2 +-
+ .../config/linux/loongarch/vpx_dsp_rtcd.h     |    9 +-
+ third_party/lss/linux_syscall_support.h       |  302 ++--
+ .../protobuf/src/google/protobuf/port_def.inc |    2 +-
+ third_party/skia/BUILD.gn                     |    1 +
+ third_party/skia/src/core/SkRasterPipeline.h  |    2 +-
+ .../third_party/llvm-10.0/BUILD.gn            |    2 +
+ ui/gfx/linux/drm_util_linux.cc                |    7 +
+ 76 files changed, 1939 insertions(+), 384 deletions(-)
+ create mode 100644 sandbox/linux/system_headers/loong64_linux_syscalls.h
+
+diff --git a/base/system/sys_info.cc b/base/system/sys_info.cc
+index 9d52ed32666..7339c684379 100644
+--- a/base/system/sys_info.cc
++++ b/base/system/sys_info.cc
+@@ -178,6 +178,8 @@ std::string SysInfo::ProcessCPUArchitecture() {
+   return "ARM";
+ #elif defined(ARCH_CPU_ARM64)
+   return "ARM_64";
++#elif defined(ARCH_CPU_LOONG64)
++  return "LOONGARCH64";
+ #else
+   return std::string();
+ #endif
+diff --git a/build/config/clang/clang.gni b/build/config/clang/clang.gni
+index 1aad3d60b84..50583c2b4c3 100644
+--- a/build/config/clang/clang.gni
++++ b/build/config/clang/clang.gni
+@@ -4,7 +4,11 @@
+ 
+ import("//build/toolchain/toolchain.gni")
+ 
+-default_clang_base_path = "//third_party/llvm-build/Release+Asserts"
++if (current_cpu == "loong64") {
++  default_clang_base_path = "/opt/llvm_chromium/llvm_install_15.0.7"
++} else {
++  default_clang_base_path = "//third_party/llvm-build/Release+Asserts"
++}
+ 
+ declare_args() {
+   # Indicates if the build should use the Chrome-specific plugins for enforcing
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+index 53db095c1b1..dcf864b0c43 100644
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -825,7 +825,7 @@ config("compiler") {
+   # * Apple platforms (e.g. MacOS, iPhone, iPad) aren't supported because xcode
+   #   lldb doesn't have the needed changes yet.
+   # TODO(crbug.com/1379070): Remove if the upstream default ever changes.
+-  if (is_clang && !is_nacl && !is_win && !is_apple) {
++  if (is_clang && !is_nacl && !is_win && !is_apple && target_cpu != "loong64") {
+     cflags_cc += [ "-gsimple-template-names" ]
+   }
+ 
+@@ -1281,8 +1281,8 @@ config("compiler_cpu_abi") {
+         ldflags += [ "--target=loongarch64-linux-gnu" ]
+       }
+       cflags += [
+-        "-mabi=lp64d",
+-        "-mcmodel=medium",
++        #"-mabi=lp64d",
++        "-mcmodel=large",
+       ]
+     } else if (current_cpu == "s390x") {
+       cflags += [ "-m64" ]
+@@ -1367,7 +1367,7 @@ config("compiler_deterministic") {
+         "-Xclang",
+         ".",
+       ]
+-    } else {
++    } else if (target_cpu != "loong64") {
+       # -ffile-compilation-dir is an alias for both -fdebug-compilation-dir=
+       # and -fcoverage-compilation-dir=.
+       cflags += [ "-ffile-compilation-dir=." ]
+@@ -1660,6 +1660,10 @@ config("default_warnings") {
+           # TODO(crbug.com/1412713) Evaluate and possibly enable.
+           "-Wno-deprecated-this-capture",
+         ]
++        if (target_cpu == "loong64") {
++          # < clang16 in loongarch.
++          cflags -= [ "-Wno-deprecated-builtins" ]
++        }
+       }
+     }
+   }
+diff --git a/build/config/posix/BUILD.gn b/build/config/posix/BUILD.gn
+index 8312d7ecf62..1e83b3f8532 100644
+--- a/build/config/posix/BUILD.gn
++++ b/build/config/posix/BUILD.gn
+@@ -28,7 +28,7 @@ config("runtime_library") {
+   if (!is_apple && sysroot != "" && current_os != "zos") {
+     # Pass the sysroot to all C compiler variants, the assembler, and linker.
+     sysroot_flags = [ "--sysroot=" + rebase_path(sysroot, root_build_dir) ]
+-    if (is_linux || is_chromeos) {
++    if ((is_linux && current_cpu != "loong64") || is_chromeos) {
+       # This is here so that all files get recompiled after a sysroot roll and
+       # when turning the sysroot on or off. (defines are passed via the command
+       # line, and build system rebuilds things when their commandline
+diff --git a/build/config/sysroot.gni b/build/config/sysroot.gni
+index dea380727e7..414576dd8f9 100644
+--- a/build/config/sysroot.gni
++++ b/build/config/sysroot.gni
+@@ -48,6 +48,8 @@ if (sysroot == "") {
+       sysroot = "$target_sysroot_dir/debian_bullseye_arm-sysroot"
+     } else if (current_cpu == "arm64") {
+       sysroot = "$target_sysroot_dir/debian_bullseye_arm64-sysroot"
++    } else if (current_cpu == "loong64") {
++      sysroot = "$target_sysroot_dir/debian_bullseye_loong64-sysroot"
+     } else {
+       assert(false, "No linux sysroot for cpu: $target_cpu")
+     }
+diff --git a/build/cross-build.sh b/build/cross-build.sh
+index beba30176a3..d69b6948e34 100755
+--- a/build/cross-build.sh
++++ b/build/cross-build.sh
+@@ -1,95 +1,9 @@
+ #! /bin/bash
+ 
+-# LBrowser V3 build configuration description.
++# Chromium build configuration description.
+ # Author: Wang Qing <wangqing-hf@loongson.cn>
+-# Data: 2020-11-12
+ 
+-# Set target_cpu
+-UNAME=$1
+-if [[ $UNAME == amd64 ]]; then
+-  target_cpu=amd64
+-elif [[ $UNAME == arm64 ]]; then
+-  target_cpu=arm64
+-elif [[ $UNAME == la64 ]]; then
+-  target_cpu=loong64
+-elif [[ $UNAME == mips64el ]]; then
+-  target_cpu=mips64el
+-elif [[ $UNAME == "" ]]; then
+-  target_cpu=mips64el
+-else
+-  echo -e "\e[31m Error:\e[0m Unspport target CPU!!!"
+-  exit 1
+-fi
+-
+-root_build_dir="out/mips64_cross"
+-
+-if [ $target_cpu == amd64 ]; then
+ # Set gn args to build.
+-# can set your own compilation parameters.
+-# For example:
+-#     is_clang=false;  you select gcc to build.
+-#     is_clang=true;   you select clang to build.
+-export GN_CONFIG=(
+-'google_api_key="AIzaSyDxKL42zsPjbke5O8_rPVpVrLrJ8aeE9rQ"'
+-'google_default_client_id="595013732528-llk8trb03f0ldpqq6nprjp1s79596646.apps.googleusercontent.com"'
+-'google_default_client_secret="5ntt6GbbkjnTVXx-MSxbmx5e"'
+-'enable_hangout_services_extension=true'
+-'enable_nacl=false'
+-'enable_swiftshader=true'
+-'enable_widevine=false'
+-'fatal_linker_warnings=false'
+-'disable_fieldtrial_testing_config=true'
+-'ffmpeg_branding="Chrome"'
+-'is_debug=false'
+-'use_gold=false'
+-'is_clang=true'
+-'clang_use_chrome_plugins=false'
+-'link_pulseaudio=true'
+-'proprietary_codecs=true'
+-'symbol_level=0'
+-'treat_warnings_as_errors=false'
+-'use_cups=true'
+-'use_gnome_keyring=false'
+-'use_kerberos=true'
+-'use_pulseaudio=true'
+-'use_sysroot=true'
+-'host_cpu = "x64"')
+-
+-root_build_dir="out/amd64_cross"
+-
+-elif [ $target_cpu == arm64 ]; then
+-export GN_CONFIG=(
+-'google_api_key="AIzaSyDxKL42zsPjbke5O8_rPVpVrLrJ8aeE9rQ"'
+-'google_default_client_id="595013732528-llk8trb03f0ldpqq6nprjp1s79596646.apps.googleusercontent.com"'
+-'google_default_client_secret="5ntt6GbbkjnTVXx-MSxbmx5e"'
+-'enable_hangout_services_extension=true'
+-'enable_nacl=false'
+-'enable_swiftshader=true'
+-'enable_widevine=false'
+-'fatal_linker_warnings=false'
+-'disable_fieldtrial_testing_config=true'
+-'ffmpeg_branding="Chrome"'
+-'is_debug=false'
+-'use_gold=false'
+-'is_clang=true'
+-'clang_use_chrome_plugins=false'
+-'link_pulseaudio=true'
+-'proprietary_codecs=true'
+-'symbol_level=0'
+-'treat_warnings_as_errors=false'
+-'use_cups=true'
+-'use_gnome_keyring=false'
+-'use_kerberos=true'
+-'use_pulseaudio=true'
+-'use_sysroot=true'
+-'enable_rust=false'
+-'host_cpu = "x64"'
+-'target_cpu = "arm64"'
+-'v8_target_cpu = "arm64"')
+-
+-root_build_dir="out/arm64_cross"
+-
+-elif [ $target_cpu == loong64 ]; then
+ export GN_CONFIG=(
+ 'google_api_key="AIzaSyDxKL42zsPjbke5O8_rPVpVrLrJ8aeE9rQ"'
+ 'google_default_client_id="595013732528-llk8trb03f0ldpqq6nprjp1s79596646.apps.googleusercontent.com"'
+@@ -106,11 +20,9 @@ export GN_CONFIG=(
+ 'is_debug=false'
+ 'use_gold=false'
+ 'is_clang=true'
+-#'clang_base_path="/opt/clang+llvm_14.0.6-1_amd64-linux-gnu_debian-10/"'
+-'clang_base_path="/opt/llvm_install_comprt/"'
+ 'clang_use_chrome_plugins=false'
+ 'link_pulseaudio=true'
+-'symbol_level=-1'
++'symbol_level=0'
+ 'treat_warnings_as_errors=false'
+ 'devtools_skip_typecheck=false'
+ 'use_gnome_keyring=false'
+@@ -121,49 +33,10 @@ export GN_CONFIG=(
+ 'v8_target_cpu = "loong64"'
+ 'enable_libaom=false'
+ 'dcheck_always_on=false'
+-'enable_rust=false'
+-'use_lld=false')
++'enable_rust=false')
+ 
++# Set build directory.
+ root_build_dir="out/la64_cross"
+ 
+-elif [ $target_cpu == mips64el ]; then
+-export GN_CONFIG=(
+-'google_api_key="AIzaSyDxKL42zsPjbke5O8_rPVpVrLrJ8aeE9rQ"'
+-'google_default_client_id="595013732528-llk8trb03f0ldpqq6nprjp1s79596646.apps.googleusercontent.com"'
+-'google_default_client_secret="5ntt6GbbkjnTVXx-MSxbmx5e"'
+-'enable_hangout_services_extension=true'
+-'enable_nacl=false'
+-'enable_swiftshader=true'
+-'enable_widevine=false'
+-'fatal_linker_warnings=false'
+-'disable_fieldtrial_testing_config=true'
+-'ffmpeg_branding="Chrome"'
+-'is_debug=false'
+-'use_gold=false'
+-'is_clang=true'
+-'clang_use_chrome_plugins=false'
+-'link_pulseaudio=true'
+-'proprietary_codecs=true'
+-'symbol_level=0'
+-'treat_warnings_as_errors=false'
+-'use_cups=true'
+-'use_gnome_keyring=false'
+-'use_kerberos=true'
+-'use_pulseaudio=true'
+-'use_sysroot=true'
+-'enable_rust=false'
+-'use_lld=false'
+-'host_cpu = "x64"'
+-'target_cpu = "mips64el"'
+-'v8_target_cpu = "mips64el"')
+-
+-root_build_dir="out/mips64_cross"
+-
+-fi
+-
+-# Prepare gn and clang-format binary.
+-#cp ./buildtools/linux64/gn_x64 ./buildtools/linux64/gn
+-#cp ./buildtools/linux64/clang-format_x64 ./buildtools/linux64/clang-format
+-
+ # generate root_build_dir to build.
+ ./buildtools/linux64/gn gen $root_build_dir --args="${GN_CONFIG[*]}"
+diff --git a/chrome/browser/download/bubble/download_bubble_update_service.cc b/chrome/browser/download/bubble/download_bubble_update_service.cc
+index 0dbffd34222..70d43e37c83 100644
+--- a/chrome/browser/download/bubble/download_bubble_update_service.cc
++++ b/chrome/browser/download/bubble/download_bubble_update_service.cc
+@@ -87,7 +87,7 @@ ItemSortKey GetSortKey(const Item& item) {
+ // Helper to get an iterator to the last element in the cache. The cache
+ // must not be empty.
+ template <typename Item>
+-SortedItems<Item>::iterator GetLastIter(SortedItems<Item>& cache) {
++typename SortedItems<Item>::iterator GetLastIter(SortedItems<Item>& cache) {
+   CHECK(!cache.empty());
+   auto it = cache.end();
+   return std::prev(it);
+@@ -789,9 +789,9 @@ bool DownloadBubbleUpdateService::RemoveItemFromCacheImpl(
+ }
+ 
+ template <typename Id, typename Item>
+-SortedItems<Item>::iterator
++typename SortedItems<Item>::iterator
+ DownloadBubbleUpdateService::RemoveItemFromCacheByIter(
+-    SortedItems<Item>::iterator iter,
++    typename SortedItems<Item>::iterator iter,
+     SortedItems<Item>& cache,
+     IterMap<Id, Item>& iter_map) {
+   CHECK(iter != cache.end());
+diff --git a/chrome/browser/download/bubble/download_bubble_update_service.h b/chrome/browser/download/bubble/download_bubble_update_service.h
+index de4e9e8a14b..07ee16a3e8a 100644
+--- a/chrome/browser/download/bubble/download_bubble_update_service.h
++++ b/chrome/browser/download/bubble/download_bubble_update_service.h
+@@ -208,8 +208,8 @@ class DownloadBubbleUpdateService
+ 
+   // Removes item if we already have the iterator to it. Returns next iterator.
+   template <typename Id, typename Item>
+-  SortedItems<Item>::iterator RemoveItemFromCacheByIter(
+-      SortedItems<Item>::iterator iter,
++  typename SortedItems<Item>::iterator RemoveItemFromCacheByIter(
++      typename SortedItems<Item>::iterator iter,
+       SortedItems<Item>& cache,
+       IterMap<Id, Item>& iter_map);
+ 
+diff --git a/chrome/browser/printing/print_backend_service_manager.cc b/chrome/browser/printing/print_backend_service_manager.cc
+index b5a4b525a2d..224369cd58c 100644
+--- a/chrome/browser/printing/print_backend_service_manager.cc
++++ b/chrome/browser/printing/print_backend_service_manager.cc
+@@ -1477,7 +1477,7 @@ template <class... T>
+ void PrintBackendServiceManager::RunSavedCallbacks(
+     RemoteSavedCallbacks<T...>& saved_callbacks,
+     const RemoteId& remote_id,
+-    std::remove_reference<T>::type... result) {
++    typename std::remove_reference<T>::type... result) {
+   auto found_callbacks_map = saved_callbacks.find(remote_id);
+   if (found_callbacks_map == saved_callbacks.end())
+     return;  // No callbacks to run.
+diff --git a/chrome/browser/printing/print_backend_service_manager.h b/chrome/browser/printing/print_backend_service_manager.h
+index d812f3b26e9..3352148cbf9 100644
+--- a/chrome/browser/printing/print_backend_service_manager.h
++++ b/chrome/browser/printing/print_backend_service_manager.h
+@@ -587,7 +587,7 @@ class PrintBackendServiceManager {
+   template <class... T>
+   void RunSavedCallbacks(RemoteSavedCallbacks<T...>& saved_callbacks,
+                          const RemoteId& remote_id,
+-                         std::remove_reference<T>::type... result);
++                         typename std::remove_reference<T>::type... result);
+ 
+   // Test support for client ID management.
+   static void SetClientsForTesting(
+diff --git a/chrome/installer/linux/common/apt.include b/chrome/installer/linux/common/apt.include
+index 05c622864e7..7d91f03dce2 100644
+--- a/chrome/installer/linux/common/apt.include
++++ b/chrome/installer/linux/common/apt.include
+@@ -369,6 +369,8 @@ get_lib_dir() {
+     LIBDIR=lib/mipsel-linux-gnu
+   elif [ "$DEFAULT_ARCH" = "mips64el" ]; then
+     LIBDIR=lib/mips64el-linux-gnuabi64
++  elif [ "$DEFAULT_ARCH" = "loongarch64" ]; then
++    LIBDIR=lib/loongarch64-linux-gnu
+   else
+     echo Unknown CPU Architecture: "$DEFAULT_ARCH"
+     exit 1
+diff --git a/chrome/installer/linux/common/rpm.include b/chrome/installer/linux/common/rpm.include
+index 29438f42720..df9e2d3b69f 100644
+--- a/chrome/installer/linux/common/rpm.include
++++ b/chrome/installer/linux/common/rpm.include
+@@ -477,7 +477,7 @@ get_lib_dir() {
+       [ "$DEFAULT_ARCH" = "mipsel" ]; then
+     LIBDIR=lib
+   elif [ "$DEFAULT_ARCH" = "x86_64" ] || [ "$DEFAULT_ARCH" = "aarch64" ] || \
+-        [ "$DEFAULT_ARCH" = "mips64el" ]; then
++        [ "$DEFAULT_ARCH" = "mips64el" ] || [ "$DEFAULT_ARCH" = "loongarch64" ]; then
+     LIBDIR=lib64
+   else
+     echo Unknown CPU Architecture: "$DEFAULT_ARCH"
+diff --git a/chrome/installer/linux/debian/build.sh b/chrome/installer/linux/debian/build.sh
+index 7cd40b9c37c..00ee185eb29 100755
+--- a/chrome/installer/linux/debian/build.sh
++++ b/chrome/installer/linux/debian/build.sh
+@@ -229,7 +229,7 @@ OUTPUTDIR="${PWD}"
+ # call cleanup() on exit
+ trap cleanup 0
+ process_opts "$@"
+-IS_OFFICIAL_BUILD=${IS_OFFICIAL_BUILD:=0}
++IS_OFFICIAL_BUILD=${IS_OFFICIAL_BUILD:=1}
+ 
+ STAGEDIR="${OUTPUTDIR}/deb-staging-${CHANNEL}"
+ mkdir -p "${STAGEDIR}"
+diff --git a/chrome/installer/linux/debian/calculate_package_deps.py b/chrome/installer/linux/debian/calculate_package_deps.py
+index e6e88a9159c..d68bfc06414 100755
+--- a/chrome/installer/linux/debian/calculate_package_deps.py
++++ b/chrome/installer/linux/debian/calculate_package_deps.py
+@@ -56,6 +56,9 @@ elif arch == 'mipsel':
+ elif arch == 'mips64el':
+   cmd.extend(['-l%s/usr/lib/mips64el-linux-gnuabi64' % sysroot,
+               '-l%s/lib/mips64el-linux-gnuabi64' % sysroot])
++elif arch == 'loong64':
++  cmd.extend(['-l%s/usr/lib/loongarch64-linux-gnu' % sysroot,
++              '-l%s/lib/loongarch64-linux-gnu' % sysroot])
+ else:
+   print('Unsupported architecture ' + arch)
+   sys.exit(1)
+diff --git a/chrome/installer/linux/rpm/build.sh b/chrome/installer/linux/rpm/build.sh
+index 3053be4fbf8..c215dca23f5 100755
+--- a/chrome/installer/linux/rpm/build.sh
++++ b/chrome/installer/linux/rpm/build.sh
+@@ -212,7 +212,7 @@ OUTPUTDIR="${PWD}"
+ trap cleanup 0
+ process_opts "$@"
+ export ARCHITECTURE="${ARCHITECTURE}"
+-IS_OFFICIAL_BUILD=${IS_OFFICIAL_BUILD:=0}
++IS_OFFICIAL_BUILD=${IS_OFFICIAL_BUILD:=1}
+ 
+ STAGEDIR="${OUTPUTDIR}/rpm-staging-${CHANNEL}"
+ mkdir -p "${STAGEDIR}"
+diff --git a/components/metrics/debug/metrics_internals_utils.cc b/components/metrics/debug/metrics_internals_utils.cc
+index c32f2c79214..83439df1f7d 100644
+--- a/components/metrics/debug/metrics_internals_utils.cc
++++ b/components/metrics/debug/metrics_internals_utils.cc
+@@ -68,6 +68,8 @@ std::string CpuArchitectureToString(
+       return "arm32";
+     case variations::Study::TRANSLATED_X86_64:
+       return "translated_x86_64";
++    case variations::Study::LOONGARCH64:
++      return "loongarch64";
+   }
+   NOTREACHED();
+ }
+diff --git a/components/variations/proto/study.proto b/components/variations/proto/study.proto
+index b1d497a8653..a087ec675e4 100644
+--- a/components/variations/proto/study.proto
++++ b/components/variations/proto/study.proto
+@@ -258,6 +258,8 @@ message Study {
+     // A Mac-only value, indicating an x86-64 binary running on an arm64 host
+     // via "Rosetta 2" binary translation.
+     TRANSLATED_X86_64 = 4;
++
++    LOONGARCH64 = 5;
+   }
+ 
+   // Enum to pass as optional bool.
+diff --git a/components/variations/service/variations_field_trial_creator.cc b/components/variations/service/variations_field_trial_creator.cc
+index ac34e1377e1..6cc0728cdaf 100644
+--- a/components/variations/service/variations_field_trial_creator.cc
++++ b/components/variations/service/variations_field_trial_creator.cc
+@@ -108,6 +108,8 @@ RestrictionPolicy GetVariationPolicyRestriction(PrefService* local_state) {
+ 
+ Study::CpuArchitecture GetCurrentCpuArchitecture() {
+   std::string process_arch = base::SysInfo::ProcessCPUArchitecture();
++  if (process_arch == "LOONGARCH64")
++    return Study::LOONGARCH64;
+   if (process_arch == "ARM_64")
+     return Study::ARM64;
+   if (process_arch == "ARM")
+diff --git a/media/base/cdm_promise_adapter.cc b/media/base/cdm_promise_adapter.cc
+index f013809a62e..11cc6cc8f4f 100644
+--- a/media/base/cdm_promise_adapter.cc
++++ b/media/base/cdm_promise_adapter.cc
+@@ -95,9 +95,9 @@ void CdmPromiseAdapter::Clear(ClearReason reason) {
+   // Reject all outstanding promises.
+   DCHECK(thread_checker_.CalledOnValidThread());
+   for (auto& [promise_id, promise] : promises_) {
+-    TRACE_EVENT_NESTABLE_ASYNC_END1(
+-        "media", "CdmPromise", TRACE_ID_WITH_SCOPE("CdmPromise", promise_id),
+-        "status", "cleared");
++    //TRACE_EVENT_NESTABLE_ASYNC_END1(
++    //    "media", "CdmPromise", TRACE_ID_WITH_SCOPE("CdmPromise", promise_id),
++    //    "status", "cleared");
+     promise->reject(CdmPromise::Exception::INVALID_STATE_ERROR,
+                     ToSystemCode(reason), "Operation aborted.");
+   }
+diff --git a/sandbox/features.gni b/sandbox/features.gni
+index 8434144118b..e1c0af43ceb 100644
+--- a/sandbox/features.gni
++++ b/sandbox/features.gni
+@@ -9,7 +9,8 @@
+ use_seccomp_bpf = (is_linux || is_chromeos || is_android) &&
+                   (current_cpu == "x86" || current_cpu == "x64" ||
+                    current_cpu == "arm" || current_cpu == "arm64" ||
+-                   current_cpu == "mipsel" || current_cpu == "mips64el")
++                   current_cpu == "mipsel" || current_cpu == "mips64el" ||
++                   current_cpu == "loong64")
+ 
+ # SSBD (Speculative Store Bypass Disable) is a mitigation of Spectre Variant 4.
+ # As Spectre Variant 4 can be mitigated by site isolation, opt-out SSBD on site
+diff --git a/sandbox/linux/BUILD.gn b/sandbox/linux/BUILD.gn
+index ee57ed301c3..ee204ba292a 100644
+--- a/sandbox/linux/BUILD.gn
++++ b/sandbox/linux/BUILD.gn
+@@ -397,6 +397,7 @@ source_set("sandbox_services_headers") {
+     "system_headers/linux_stat.h",
+     "system_headers/linux_syscalls.h",
+     "system_headers/linux_time.h",
++    "system_headers/loong64_linux_syscalls.h",
+     "system_headers/mips64_linux_syscalls.h",
+     "system_headers/mips_linux_syscalls.h",
+     "system_headers/x86_32_linux_syscalls.h",
+diff --git a/sandbox/linux/bpf_dsl/linux_syscall_ranges.h b/sandbox/linux/bpf_dsl/linux_syscall_ranges.h
+index 1d0590b7dd6..5169ad3c82d 100644
+--- a/sandbox/linux/bpf_dsl/linux_syscall_ranges.h
++++ b/sandbox/linux/bpf_dsl/linux_syscall_ranges.h
+@@ -56,6 +56,13 @@
+ #define MAX_PUBLIC_SYSCALL __NR_syscalls
+ #define MAX_SYSCALL MAX_PUBLIC_SYSCALL
+ 
++#elif defined(__loongarch64)
++
++#include <asm-generic/unistd.h>
++#define MIN_SYSCALL 0u
++#define MAX_PUBLIC_SYSCALL __NR_syscalls
++#define MAX_SYSCALL MAX_PUBLIC_SYSCALL
++
+ #else
+ #error "Unsupported architecture"
+ #endif
+diff --git a/sandbox/linux/bpf_dsl/seccomp_macros.h b/sandbox/linux/bpf_dsl/seccomp_macros.h
+index 87d5825aa3d..44d5b3a8d26 100644
+--- a/sandbox/linux/bpf_dsl/seccomp_macros.h
++++ b/sandbox/linux/bpf_dsl/seccomp_macros.h
+@@ -343,6 +343,48 @@ struct regs_struct {
+ #define SECCOMP_PT_PARM4(_regs) (_regs).regs[3]
+ #define SECCOMP_PT_PARM5(_regs) (_regs).regs[4]
+ #define SECCOMP_PT_PARM6(_regs) (_regs).regs[5]
++
++#elif defined(__loongarch64)
++struct regs_struct {
++  uint64_t regs[32];
++  uint64_t pc;
++};
++
++#define SECCOMP_ARCH AUDIT_ARCH_LOONGARCH64
++
++#define SECCOMP_REG(_ctx, _reg) ((_ctx)->uc_mcontext.__gregs[_reg])
++
++#define SECCOMP_RESULT(_ctx) SECCOMP_REG(_ctx, 4)
++#define SECCOMP_SYSCALL(_ctx) SECCOMP_REG(_ctx, 11)
++#define SECCOMP_IP(_ctx) (_ctx)->uc_mcontext.__pc
++#define SECCOMP_PARM1(_ctx) SECCOMP_REG(_ctx, 4)
++#define SECCOMP_PARM2(_ctx) SECCOMP_REG(_ctx, 5)
++#define SECCOMP_PARM3(_ctx) SECCOMP_REG(_ctx, 6)
++#define SECCOMP_PARM4(_ctx) SECCOMP_REG(_ctx, 7)
++#define SECCOMP_PARM5(_ctx) SECCOMP_REG(_ctx, 8)
++#define SECCOMP_PARM6(_ctx) SECCOMP_REG(_ctx, 9)
++
++#define SECCOMP_NR_IDX (offsetof(struct arch_seccomp_data, nr))
++#define SECCOMP_ARCH_IDX (offsetof(struct arch_seccomp_data, arch))
++#define SECCOMP_IP_MSB_IDX \
++  (offsetof(struct arch_seccomp_data, instruction_pointer) + 4)
++#define SECCOMP_IP_LSB_IDX \
++  (offsetof(struct arch_seccomp_data, instruction_pointer) + 0)
++#define SECCOMP_ARG_MSB_IDX(nr) \
++  (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 4)
++#define SECCOMP_ARG_LSB_IDX(nr) \
++  (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 0)
++
++#define SECCOMP_PT_RESULT(_regs) (_regs).regs[4]
++#define SECCOMP_PT_SYSCALL(_regs) (_regs).regs[11]
++#define SECCOMP_PT_IP(_regs) (_regs).pc
++#define SECCOMP_PT_PARM1(_regs) (_regs).regs[4]
++#define SECCOMP_PT_PARM2(_regs) (_regs).regs[5]
++#define SECCOMP_PT_PARM3(_regs) (_regs).regs[6]
++#define SECCOMP_PT_PARM4(_regs) (_regs).regs[7]
++#define SECCOMP_PT_PARM5(_regs) (_regs).regs[8]
++#define SECCOMP_PT_PARM6(_regs) (_regs).regs[9]
++
+ #else
+ #error Unsupported target platform
+ 
+diff --git a/sandbox/linux/integration_tests/bpf_dsl_seccomp_unittest.cc b/sandbox/linux/integration_tests/bpf_dsl_seccomp_unittest.cc
+index 4a2721c7ce1..a5e3cbd3584 100644
+--- a/sandbox/linux/integration_tests/bpf_dsl_seccomp_unittest.cc
++++ b/sandbox/linux/integration_tests/bpf_dsl_seccomp_unittest.cc
+@@ -577,6 +577,7 @@ class GreyListedPolicy : public Policy {
+   const raw_ptr<int> aux_;
+ };
+ 
++#if !defined(__loongarch__)
+ BPF_TEST(SandboxBPF, GreyListedPolicy, GreyListedPolicy, int /* (*BPF_AUX) */) {
+   BPF_ASSERT(sys_getpid() == -1);
+   BPF_ASSERT(errno == EPERM);
+@@ -593,6 +594,7 @@ BPF_TEST(SandboxBPF, GreyListedPolicy, GreyListedPolicy, int /* (*BPF_AUX) */) {
+   BPF_ASSERT(*BPF_AUX == 3);
+   BPF_ASSERT(*name);
+ }
++#endif
+ 
+ SANDBOX_TEST(SandboxBPF, EnableUnsafeTrapsInSigSysHandler) {
+   // Disabling warning messages that could confuse our test framework.
+@@ -1932,7 +1934,8 @@ BPF_TEST_C(SandboxBPF, PthreadBitMask, PthreadPolicyBitMask) {
+ //
+ // Depending on the architecture, this may modify regs, so the caller is
+ // responsible for committing these changes using PTRACE_SETREGS.
+-#if !defined(__arm__) && !defined(__aarch64__) && !defined(__mips__)
++#if !defined(__arm__) && !defined(__aarch64__) && !defined(__mips__) && \
++    !defined(__loongarch__)
+ long SetSyscall(pid_t pid, regs_struct* regs, int syscall_number) {
+ #if defined(__arm__)
+   // On ARM, the syscall is changed using PTRACE_SET_SYSCALL.  We cannot use the
+@@ -1972,7 +1975,7 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
+ // See https://code.google.com/p/chromium/issues/detail?id=383977
+ #if defined(__arm__) || defined(__aarch64__)
+   printf("This test is currently disabled on ARM32/64 due to a kernel bug.");
+-#elif defined(__mips__)
++#elif defined(__mips__) || defined(__loongarch__)
+   // TODO: Figure out how to support specificity of handling indirect syscalls
+   //        in this test and enable it.
+   printf("This test is currently disabled on MIPS.");
+diff --git a/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc b/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+index 7bde501115b..af3d7556d09 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+@@ -193,7 +193,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
+     return RestrictFcntlCommands();
+ #endif
+ 
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+   // fork() is never used as a system call (clone() is used instead), but we
+   // have seen it in fallback code on Android.
+   if (sysno == __NR_fork) {
+@@ -255,7 +255,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
+   }
+ 
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch64)
+   if (sysno == __NR_mmap)
+     return RestrictMmapFlags();
+ #endif
+@@ -276,7 +276,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
+     return RestrictPrctl();
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch64)
+   if (sysno == __NR_socketpair) {
+     // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
+     static_assert(AF_UNIX == PF_UNIX,
+@@ -366,7 +366,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
+   // Allow creating pipes, but don't allow weird flags to pipe2().
+   // O_NOTIFICATION_PIPE (== O_EXCL) can be used to create
+   // "notification pipes", which are rarely used.
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+   if (sysno == __NR_pipe) {
+     return Allow();
+   }
+diff --git a/sandbox/linux/seccomp-bpf-helpers/baseline_policy_unittest.cc b/sandbox/linux/seccomp-bpf-helpers/baseline_policy_unittest.cc
+index 2001e5d27b4..92b095530b3 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/baseline_policy_unittest.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/baseline_policy_unittest.cc
+@@ -247,7 +247,8 @@ BPF_TEST_C(BaselinePolicy, GetRandom, BaselinePolicy) {
+ }
+ 
+ // Not all architectures can restrict the domain for socketpair().
+-#if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
++#if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
++    defined(__loongarch64)
+ BPF_DEATH_TEST_C(BaselinePolicy,
+                  SocketpairWrongDomain,
+                  DEATH_SEGV_MESSAGE(GetErrorMessageContentForTests()),
+@@ -256,7 +257,8 @@ BPF_DEATH_TEST_C(BaselinePolicy,
+   std::ignore = socketpair(AF_INET, SOCK_STREAM, 0, sv);
+   _exit(1);
+ }
+-#endif  // defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
++#endif  // defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) ||
++        // defined(__loongarch64)
+ 
+ BPF_TEST_C(BaselinePolicy, EPERM_open, BaselinePolicy) {
+   errno = 0;
+@@ -320,7 +322,7 @@ TEST_BASELINE_SIGSYS(__NR_sysinfo)
+ TEST_BASELINE_SIGSYS(__NR_syslog)
+ TEST_BASELINE_SIGSYS(__NR_timer_create)
+ 
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+ TEST_BASELINE_SIGSYS(__NR_inotify_init)
+ TEST_BASELINE_SIGSYS(__NR_vserver)
+ #endif
+diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+index cdce353e752..5d8305470da 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+@@ -37,7 +37,7 @@
+ 
+ #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
+     !defined(__arm__) && !defined(__aarch64__) &&             \
+-    !defined(PTRACE_GET_THREAD_AREA)
++    !defined(PTRACE_GET_THREAD_AREA) && !defined(__loongarch__)
+ // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
+ // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
+ // asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
+@@ -444,7 +444,10 @@ ResultExpr RestrictPtrace() {
+   return Switch(request)
+       .Cases({
+ #if !defined(__aarch64__)
+-                 PTRACE_GETREGS, PTRACE_GETFPREGS, PTRACE_GET_THREAD_AREA,
++                 PTRACE_GETREGS, PTRACE_GETFPREGS,
++#if !defined(__loongarch64)
++		 PTRACE_GET_THREAD_AREA,
++#endif
+                  PTRACE_GETREGSET,
+ #endif
+ #if defined(__arm__)
+diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+index 27ea264070d..2597b598f97 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -103,7 +103,7 @@ bool SyscallSets::IsUmask(int sysno) {
+ // Both EPERM and ENOENT are valid errno unless otherwise noted in comment.
+ bool SyscallSets::IsFileSystem(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_access:  // EPERM not a valid errno.
+     case __NR_chmod:
+     case __NR_chown:
+@@ -136,7 +136,7 @@ bool SyscallSets::IsFileSystem(int sysno) {
+     case __NR_faccessat2:
+     case __NR_fchmodat:
+     case __NR_fchownat:  // Should be called chownat ?
+-#if defined(__x86_64__) || defined(__aarch64__)
++#if defined(__x86_64__) || defined(__aarch64__) || defined(__loongarch64)
+     case __NR_newfstatat:  // fstatat(). EPERM not a valid errno.
+ #elif defined(__i386__) || defined(__arm__) || \
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+@@ -241,7 +241,7 @@ bool SyscallSets::IsAllowedFileSystemAccessViaFd(int sysno) {
+     case __NR_oldfstat:
+ #endif
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_sync_file_range:  // EPERM not a valid errno.
+ #elif defined(__arm__)
+     case __NR_arm_sync_file_range:  // EPERM not a valid errno.
+@@ -260,7 +260,7 @@ bool SyscallSets::IsDeniedFileSystemAccessViaFd(int sysno) {
+ #if defined(__i386__) || defined(__arm__)
+     case __NR_fchown32:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_getdents:    // EPERM not a valid errno.
+ #endif
+     case __NR_getdents64:  // EPERM not a valid errno.
+@@ -339,7 +339,7 @@ bool SyscallSets::IsProcessPrivilegeChange(int sysno) {
+ bool SyscallSets::IsProcessGroupOrSession(int sysno) {
+   switch (sysno) {
+     case __NR_setpgid:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_getpgrp:
+ #endif
+     case __NR_setsid:
+@@ -373,7 +373,7 @@ bool SyscallSets::IsAllowedSignalHandling(int sysno) {
+     case __NR_rt_sigqueueinfo:
+     case __NR_rt_sigsuspend:
+     case __NR_rt_tgsigqueueinfo:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_signalfd:
+ #endif
+     case __NR_signalfd4:
+@@ -397,12 +397,12 @@ bool SyscallSets::IsAllowedOperationOnFd(int sysno) {
+   switch (sysno) {
+     case __NR_close:
+     case __NR_dup:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_dup2:
+ #endif
+     case __NR_dup3:
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_shutdown:
+ #endif
+       return true;
+@@ -441,7 +441,7 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
+       return true;
+     case __NR_clone:  // Should be parameter-restricted.
+     case __NR_setns:  // Privileged.
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_fork:
+ #endif
+ #if defined(__i386__) || defined(__x86_64__)
+@@ -452,7 +452,7 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
+ #endif
+     case __NR_set_tid_address:
+     case __NR_unshare:
+-#if !defined(__mips__) && !defined(__aarch64__)
++#if !defined(__mips__) && !defined(__aarch64__) && !defined(__loongarch__)
+     case __NR_vfork:
+ #endif
+     default:
+@@ -477,7 +477,7 @@ bool SyscallSets::IsAllowedFutex(int sysno) {
+ 
+ bool SyscallSets::IsAllowedEpoll(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_epoll_create:
+     case __NR_epoll_wait:
+ #endif
+@@ -499,7 +499,7 @@ bool SyscallSets::IsAllowedEpoll(int sysno) {
+ bool SyscallSets::IsDeniedGetOrModifySocket(int sysno) {
+   switch (sysno) {
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_accept:
+     case __NR_accept4:
+     case __NR_bind:
+@@ -553,7 +553,7 @@ bool SyscallSets::IsAllowedAddressSpaceAccess(int sysno) {
+     case __NR_mincore:
+     case __NR_mlockall:
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_mmap:
+ #endif
+ #if defined(__i386__) || defined(__arm__) || \
+@@ -586,7 +586,7 @@ bool SyscallSets::IsAllowedGeneralIo(int sysno) {
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+     case __NR__llseek:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_poll:
+ #endif
+     case __NR_ppoll:
+@@ -607,7 +607,7 @@ bool SyscallSets::IsAllowedGeneralIo(int sysno) {
+     case __NR_recv:
+ #endif
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_recvfrom:  // Could specify source.
+     case __NR_recvmsg:   // Could specify source.
+ #endif
+@@ -622,7 +622,7 @@ bool SyscallSets::IsAllowedGeneralIo(int sysno) {
+     case __NR_send:
+ #endif
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_sendmsg:  // Could specify destination.
+     case __NR_sendto:   // Could specify destination.
+ #endif
+@@ -671,7 +671,7 @@ bool SyscallSets::IsSeccomp(int sysno) {
+ bool SyscallSets::IsAllowedBasicScheduler(int sysno) {
+   switch (sysno) {
+     case __NR_sched_yield:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_pause:
+ #endif
+     case __NR_nanosleep:
+@@ -755,7 +755,7 @@ bool SyscallSets::IsNuma(int sysno) {
+     case __NR_getcpu:
+     case __NR_mbind:
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_migrate_pages:
+ #endif
+     case __NR_move_pages:
+@@ -790,7 +790,7 @@ bool SyscallSets::IsGlobalProcessEnvironment(int sysno) {
+   switch (sysno) {
+     case __NR_acct:  // Privileged.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+     case __NR_getrlimit:
+ #endif
+ #if defined(__i386__) || defined(__arm__)
+@@ -825,7 +825,7 @@ bool SyscallSets::IsDebug(int sysno) {
+ 
+ bool SyscallSets::IsGlobalSystemStatus(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR__sysctl:
+     case __NR_sysfs:
+ #endif
+@@ -843,7 +843,7 @@ bool SyscallSets::IsGlobalSystemStatus(int sysno) {
+ 
+ bool SyscallSets::IsEventFd(int sysno) {
+   switch (sysno) {
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_eventfd:
+ #endif
+     case __NR_eventfd2:
+@@ -895,7 +895,8 @@ bool SyscallSets::IsKeyManagement(int sysno) {
+ }
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) ||    \
++    defined(__loongarch64)
+ bool SyscallSets::IsSystemVSemaphores(int sysno) {
+   switch (sysno) {
+     case __NR_semctl:
+@@ -914,7 +915,7 @@ bool SyscallSets::IsSystemVSemaphores(int sysno) {
+ #endif
+ 
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
+-    defined(__aarch64__) ||                                         \
++    defined(__aarch64__) || defined(__loongarch64) ||               \
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
+ // These give a lot of ambient authority and bypass the setuid sandbox.
+ bool SyscallSets::IsSystemVSharedMemory(int sysno) {
+@@ -931,7 +932,8 @@ bool SyscallSets::IsSystemVSharedMemory(int sysno) {
+ #endif
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) ||    \
++    defined(__loongarch64)
+ bool SyscallSets::IsSystemVMessageQueue(int sysno) {
+   switch (sysno) {
+     case __NR_msgctl:
+@@ -962,7 +964,8 @@ bool SyscallSets::IsSystemVIpc(int sysno) {
+ 
+ bool SyscallSets::IsAnySystemV(int sysno) {
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) ||    \
++    defined(__loongarch64)
+   return IsSystemVMessageQueue(sysno) || IsSystemVSemaphores(sysno) ||
+          IsSystemVSharedMemory(sysno);
+ #elif defined(__i386__) || \
+@@ -999,7 +1002,7 @@ bool SyscallSets::IsAdvancedScheduler(int sysno) {
+ bool SyscallSets::IsInotify(int sysno) {
+   switch (sysno) {
+     case __NR_inotify_add_watch:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_inotify_init:
+ #endif
+     case __NR_inotify_init1:
+@@ -1137,7 +1140,7 @@ bool SyscallSets::IsMisc(int sysno) {
+ #if defined(__x86_64__)
+     case __NR_tuxcall:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_vserver:
+ #endif
+       return true;
+diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h b/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h
+index 9be7b03ec43..6ffba1c61d7 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h
++++ b/sandbox/linux/seccomp-bpf-helpers/syscall_sets.h
+@@ -52,7 +52,7 @@ class SANDBOX_EXPORT SyscallSets {
+ #endif
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch__)
+   static bool IsNetworkSocketInformation(int sysno);
+ #endif
+ 
+@@ -79,23 +79,27 @@ class SANDBOX_EXPORT SyscallSets {
+   static bool IsAsyncIo(int sysno);
+   static bool IsKeyManagement(int sysno);
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) ||    \
++    defined(__loongarch__)
+   static bool IsSystemVSemaphores(int sysno);
+ #endif
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
+     defined(__aarch64__) ||                                         \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) || \
++    defined(__loongarch__)
+   // These give a lot of ambient authority and bypass the setuid sandbox.
+   static bool IsSystemVSharedMemory(int sysno);
+ #endif
+ 
+ #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS))
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)) ||    \
++    defined(__loongarch__)
+   static bool IsSystemVMessageQueue(int sysno);
+ #endif
+ 
+-#if defined(__i386__) || \
+-    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
++#if defined(__i386__) ||                                            \
++    (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS)) || \
++    defined(__looongarch__)
+   // Big system V multiplexing system call.
+   static bool IsSystemVIpc(int sysno);
+ #endif
+diff --git a/sandbox/linux/seccomp-bpf/syscall.cc b/sandbox/linux/seccomp-bpf/syscall.cc
+index 02cbb047c15..7aae2a24952 100644
+--- a/sandbox/linux/seccomp-bpf/syscall.cc
++++ b/sandbox/linux/seccomp-bpf/syscall.cc
+@@ -18,7 +18,7 @@ namespace sandbox {
+ namespace {
+ 
+ #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) || \
+-    defined(ARCH_CPU_MIPS_FAMILY)
++    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+ // Number that's not currently used by any Linux kernel ABIs.
+ const int kInvalidSyscallNumber = 0x351d3;
+ #else
+@@ -308,6 +308,25 @@ asm(// We need to be able to tell the kernel exactly where we made a
+     "2:ret\n"
+     ".cfi_endproc\n"
+     ".size SyscallAsm, .-SyscallAsm\n"
++#elif defined(__loongarch64)
++    ".text\n"
++    ".global SyscallAsm\n"
++    ".type SyscallAsm, %function\n"
++    "SyscallAsm:\n"
++    "bge $a0, $zero, 1f\n"
++    "la $a0, 2f\n"
++    "b 2f\n"
++    "1:ld.d $a5, $a6, 40\n"
++    "ld.d $a4, $a6, 32\n"
++    "ld.d $a3, $a6, 24\n"
++    "ld.d $a2, $a6, 16\n"
++    "ld.d $a1, $a6, 8\n"
++    "move $a7, $a0\n"
++    "ld.d $a0, $a6, 0\n"
++    // Enter the kernel
++    "syscall 0\n"
++    "2:jirl $zero, $ra, 0\n"
++    ".size SyscallAsm, .-SyscallAsm\n"
+ #endif
+     );  // asm
+ 
+@@ -424,6 +443,17 @@ intptr_t Syscall::Call(int nr,
+                  : "memory", "x1", "x2", "x3", "x4", "x5", "x8", "x30");
+     ret = inout;
+   }
++#elif defined(__loongarch64)
++  intptr_t ret;
++  {
++    register intptr_t inout __asm__("$r4") = nr;
++    register const intptr_t* data __asm__("$r10") = args;
++    asm volatile("bl SyscallAsm\n"
++                 : "=r"(inout)
++                 : "0"(inout), "r"(data)
++                 : "memory", "$r5", "$r6", "$r7", "$r8", "$r9", "$r11", "$r1");
++    ret = inout;
++  }
+ 
+ #else
+ #error "Unimplemented architecture"
+diff --git a/sandbox/linux/seccomp-bpf/syscall_unittest.cc b/sandbox/linux/seccomp-bpf/syscall_unittest.cc
+index 9667feaae87..902d6b32016 100644
+--- a/sandbox/linux/seccomp-bpf/syscall_unittest.cc
++++ b/sandbox/linux/seccomp-bpf/syscall_unittest.cc
+@@ -65,6 +65,7 @@ TEST(Syscall, WellKnownEntryPoint) {
+   EXPECT_EQ(0x0cu, (((uint32_t*)Syscall::Call(-1))[-1]) & 0x0000FFFF);
+ #elif defined(__aarch64__)
+   EXPECT_EQ(0xD4000001u, ((uint32_t*)Syscall::Call(-1))[-1]);  // SVC 0
++#elif defined(__loongarch64)
+ #else
+ #warning Incomplete test case; need port for target platform
+ #endif
+diff --git a/sandbox/linux/services/credentials.cc b/sandbox/linux/services/credentials.cc
+index e284c59d239..5257bddc7cd 100644
+--- a/sandbox/linux/services/credentials.cc
++++ b/sandbox/linux/services/credentials.cc
+@@ -80,7 +80,7 @@ bool ChrootToSafeEmptyDir() {
+   pid_t pid = -1;
+   alignas(16) char stack_buf[PTHREAD_STACK_MIN];
+ #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) || \
+-    defined(ARCH_CPU_MIPS_FAMILY)
++    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+   // The stack grows downward.
+   void* stack = stack_buf + sizeof(stack_buf);
+ #else
+diff --git a/sandbox/linux/services/syscall_wrappers.cc b/sandbox/linux/services/syscall_wrappers.cc
+index 7650e983b38..6f99fa03ca5 100644
+--- a/sandbox/linux/services/syscall_wrappers.cc
++++ b/sandbox/linux/services/syscall_wrappers.cc
+@@ -61,7 +61,7 @@ long sys_clone(unsigned long flags,
+ #if defined(ARCH_CPU_X86_64)
+   return syscall(__NR_clone, flags, child_stack, ptid, ctid, tls);
+ #elif defined(ARCH_CPU_X86) || defined(ARCH_CPU_ARM_FAMILY) || \
+-    defined(ARCH_CPU_MIPS_FAMILY)
++    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+   // CONFIG_CLONE_BACKWARDS defined.
+   return syscall(__NR_clone, flags, child_stack, ptid, tls, ctid);
+ #endif
+diff --git a/sandbox/linux/syscall_broker/broker_process.cc b/sandbox/linux/syscall_broker/broker_process.cc
+index a55b548a8ec..e6c9cf551a8 100644
+--- a/sandbox/linux/syscall_broker/broker_process.cc
++++ b/sandbox/linux/syscall_broker/broker_process.cc
+@@ -122,44 +122,44 @@ bool BrokerProcess::IsSyscallBrokerable(int sysno, bool fast_check) const {
+   // and are default disabled in Android. So, we should refuse to broker them
+   // to be consistent with the platform's restrictions.
+   switch (sysno) {
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !defined(OS_ANDROID) && !defined(__loongarch64)
+     case __NR_access:
+ #endif
+     case __NR_faccessat:
+     case __NR_faccessat2:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_ACCESS);
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_mkdir:
+ #endif
+     case __NR_mkdirat:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_MKDIR);
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_open:
+ #endif
+     case __NR_openat:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_OPEN);
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_readlink:
+ #endif
+     case __NR_readlinkat:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_READLINK);
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_rename:
+ #endif
+     case __NR_renameat:
+     case __NR_renameat2:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_RENAME);
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_rmdir:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_RMDIR);
+ #endif
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_stat:
+     case __NR_lstat:
+ #endif
+@@ -169,7 +169,7 @@ bool BrokerProcess::IsSyscallBrokerable(int sysno, bool fast_check) const {
+ #if defined(__NR_fstatat64)
+     case __NR_fstatat64:
+ #endif
+-#if defined(__x86_64__) || defined(__aarch64__)
++#if defined(__x86_64__) || defined(__aarch64__) || defined(__loongarch64)
+     case __NR_newfstatat:
+ #endif
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_STAT);
+@@ -184,7 +184,7 @@ bool BrokerProcess::IsSyscallBrokerable(int sysno, bool fast_check) const {
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_STAT);
+ #endif
+ 
+-#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID)
++#if !defined(__aarch64__) && !BUILDFLAG(IS_ANDROID) && !defined(__loongarch64)
+     case __NR_unlink:
+       return !fast_check || policy_->allowed_command_set.test(COMMAND_UNLINK);
+ #endif
+diff --git a/sandbox/linux/syscall_broker/broker_process_unittest.cc b/sandbox/linux/syscall_broker/broker_process_unittest.cc
+index cb85c87f2c2..e68dad00cce 100644
+--- a/sandbox/linux/syscall_broker/broker_process_unittest.cc
++++ b/sandbox/linux/syscall_broker/broker_process_unittest.cc
+@@ -1996,12 +1996,14 @@ TEST(BrokerProcess, IsSyscallAllowed) {
+         __NR_readlink
+ #endif
+        }},
++#if !defined(__loongarch64)
+       {COMMAND_RENAME,
+        {__NR_renameat,
+ #if defined(__NR_rename) && !BUILDFLAG(IS_ANDROID)
+         __NR_rename
+ #endif
+        }},
++#endif
+       {COMMAND_UNLINK,
+        {__NR_unlinkat,
+ #if defined(__NR_unlink) && !BUILDFLAG(IS_ANDROID)
+diff --git a/sandbox/linux/syscall_broker/remote_syscall_arg_handler_unittest.cc b/sandbox/linux/syscall_broker/remote_syscall_arg_handler_unittest.cc
+index 15b2ee66d4b..12ccb0b5d9b 100644
+--- a/sandbox/linux/syscall_broker/remote_syscall_arg_handler_unittest.cc
++++ b/sandbox/linux/syscall_broker/remote_syscall_arg_handler_unittest.cc
+@@ -28,7 +28,11 @@ namespace {
+ const char kPathPart[] = "/i/am/path";
+ 
+ void FillBufferWithPath(char* buf, size_t size, bool null_terminate) {
++#if defined(__loongarch64)
++  SANDBOX_ASSERT_LE(size, static_cast<size_t>(PATH_MAX)*4);
++#else
+   SANDBOX_ASSERT_LE(size, static_cast<size_t>(PATH_MAX));
++#endif
+   size_t str_len = strlen(kPathPart);
+   size_t len_left_to_write = size;
+   char* curr_buf_pos = buf;
+diff --git a/sandbox/linux/system_headers/linux_seccomp.h b/sandbox/linux/system_headers/linux_seccomp.h
+index 8690a96eb01..97638236f4d 100644
+--- a/sandbox/linux/system_headers/linux_seccomp.h
++++ b/sandbox/linux/system_headers/linux_seccomp.h
+@@ -39,6 +39,10 @@
+ #define EM_AARCH64 183
+ #endif
+ 
++#ifndef EM_LOONGARCH
++#define EM_LOONGARCH 258
++#endif
++
+ #ifndef __AUDIT_ARCH_64BIT
+ #define __AUDIT_ARCH_64BIT 0x80000000
+ #endif
+@@ -71,6 +75,10 @@
+ #define AUDIT_ARCH_AARCH64 (EM_AARCH64 | __AUDIT_ARCH_64BIT | __AUDIT_ARCH_LE)
+ #endif
+ 
++#ifndef AUDIT_ARCH_LOONGARCH64
++#define AUDIT_ARCH_LOONGARCH64 (EM_LOONGARCH | __AUDIT_ARCH_64BIT | __AUDIT_ARCH_LE)
++#endif
++
+ // For prctl.h
+ #ifndef PR_SET_SECCOMP
+ #define PR_SET_SECCOMP               22
+diff --git a/sandbox/linux/system_headers/linux_signal.h b/sandbox/linux/system_headers/linux_signal.h
+index 69ccaf10815..ba3daf7e236 100644
+--- a/sandbox/linux/system_headers/linux_signal.h
++++ b/sandbox/linux/system_headers/linux_signal.h
+@@ -13,7 +13,7 @@
+ // (not undefined, but defined different values and in different memory
+ // layouts). So, fill the gap here.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__loongarch64)
+ 
+ #define LINUX_SIGHUP 1
+ #define LINUX_SIGINT 2
+@@ -97,7 +97,8 @@ typedef siginfo_t LinuxSigInfo;
+ struct LinuxSigSet {
+   unsigned long sig[_NSIG_WORDS];
+ };
+-#elif defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS)
++#elif defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_64_BITS) || \
++    defined(ARCH_CPU_LOONG_FAMILY)
+ #if !defined(_NSIG_WORDS)
+ #define _NSIG_WORDS 2
+ #endif
+diff --git a/sandbox/linux/system_headers/linux_stat.h b/sandbox/linux/system_headers/linux_stat.h
+index 3aae8cbced7..fb261d31d58 100644
+--- a/sandbox/linux/system_headers/linux_stat.h
++++ b/sandbox/linux/system_headers/linux_stat.h
+@@ -150,7 +150,7 @@ struct kernel_stat {
+   int st_blocks;
+   int st_pad4[14];
+ };
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__loongarch64)
+ struct kernel_stat {
+   unsigned long st_dev;
+   unsigned long st_ino;
+diff --git a/sandbox/linux/system_headers/linux_syscalls.h b/sandbox/linux/system_headers/linux_syscalls.h
+index 438147b4018..c7f0f82f7d4 100644
+--- a/sandbox/linux/system_headers/linux_syscalls.h
++++ b/sandbox/linux/system_headers/linux_syscalls.h
+@@ -35,5 +35,9 @@
+ #include "sandbox/linux/system_headers/arm64_linux_syscalls.h"
+ #endif
+ 
++#if defined(__loongarch64)
++#include "sandbox/linux/system_headers/loong64_linux_syscalls.h"
++#endif
++
+ #endif  // SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_SYSCALLS_H_
+ 
+diff --git a/sandbox/linux/system_headers/loong64_linux_syscalls.h b/sandbox/linux/system_headers/loong64_linux_syscalls.h
+new file mode 100644
+index 00000000000..e2153fd70ed
+--- /dev/null
++++ b/sandbox/linux/system_headers/loong64_linux_syscalls.h
+@@ -0,0 +1,1221 @@
++// Copyright 2021 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef SANDBOX_LINUX_SYSTEM_HEADERS_LOONG64_LINUX_SYSCALLS_H_
++#define SANDBOX_LINUX_SYSTEM_HEADERS_LOONG64_LINUX_SYSCALLS_H_
++
++#if !defined(__loongarch__)
++#error "Including header on wrong architecture"
++#endif
++#include <asm/unistd.h>
++
++#if !defined(__NR_io_setup)
++#define __NR_io_setup 0
++#endif
++
++#if !defined(__NR_io_destroy)
++#define __NR_io_destroy 1
++#endif
++
++#if !defined(__NR_io_submit)
++#define __NR_io_submit 2
++#endif
++
++#if !defined(__NR_io_cancel)
++#define __NR_io_cancel 3
++#endif
++
++#if !defined(__NR_io_getevents)
++#define __NR_io_getevents 4
++#endif
++
++#if !defined(__NR_setxattr)
++#define __NR_setxattr 5
++#endif
++
++#if !defined(__NR_lsetxattr)
++#define __NR_lsetxattr 6
++#endif
++
++#if !defined(__NR_fsetxattr)
++#define __NR_fsetxattr 7
++#endif
++
++#if !defined(__NR_getxattr)
++#define __NR_getxattr 8
++#endif
++
++#if !defined(__NR_lgetxattr)
++#define __NR_lgetxattr 9
++#endif
++
++#if !defined(__NR_fgetxattr)
++#define __NR_fgetxattr 10
++#endif
++
++#if !defined(__NR_listxattr)
++#define __NR_listxattr 11
++#endif
++
++#if !defined(__NR_llistxattr)
++#define __NR_llistxattr 12
++#endif
++
++#if !defined(__NR_flistxattr)
++#define __NR_flistxattr 13
++#endif
++
++#if !defined(__NR_removexattr)
++#define __NR_removexattr 14
++#endif
++
++#if !defined(__NR_lremovexattr)
++#define __NR_lremovexattr 15
++#endif
++
++#if !defined(__NR_fremovexattr)
++#define __NR_fremovexattr 16
++#endif
++
++#if !defined(__NR_getcwd)
++#define __NR_getcwd 17
++#endif
++
++#if !defined(__NR_lookup_dcookie)
++#define __NR_lookup_dcookie 18
++#endif
++
++#if !defined(__NR_eventfd2)
++#define __NR_eventfd2 19
++#endif
++
++#if !defined(__NR_epoll_create1)
++#define __NR_epoll_create1 20
++#endif
++
++#if !defined(__NR_epoll_ctl)
++#define __NR_epoll_ctl 21
++#endif
++
++#if !defined(__NR_epoll_pwait)
++#define __NR_epoll_pwait 22
++#endif
++
++#if !defined(__NR_dup)
++#define __NR_dup 23
++#endif
++
++#if !defined(__NR_dup3)
++#define __NR_dup3 24
++#endif
++
++#if !defined(__NR_fcntl)
++#define __NR_fcntl 25
++#endif
++
++#if !defined(__NR_inotify_init1)
++#define __NR_inotify_init1 26
++#endif
++
++#if !defined(__NR_inotify_add_watch)
++#define __NR_inotify_add_watch 27
++#endif
++
++#if !defined(__NR_inotify_rm_watch)
++#define __NR_inotify_rm_watch 28
++#endif
++
++#if !defined(__NR_ioctl)
++#define __NR_ioctl 29
++#endif
++
++#if !defined(__NR_ioprio_set)
++#define __NR_ioprio_set 30
++#endif
++
++#if !defined(__NR_ioprio_get)
++#define __NR_ioprio_get 31
++#endif
++
++#if !defined(__NR_flock)
++#define __NR_flock 32
++#endif
++
++#if !defined(__NR_mknodat)
++#define __NR_mknodat 33
++#endif
++
++#if !defined(__NR_mkdirat)
++#define __NR_mkdirat 34
++#endif
++
++#if !defined(__NR_unlinkat)
++#define __NR_unlinkat 35
++#endif
++
++#if !defined(__NR_symlinkat)
++#define __NR_symlinkat 36
++#endif
++
++#if !defined(__NR_linkat)
++#define __NR_linkat 37
++#endif
++
++#if !defined(__NR_renameat)
++#define __NR_renameat 38
++#endif
++
++#if !defined(__NR_umount2)
++#define __NR_umount2 39
++#endif
++
++#if !defined(__NR_mount)
++#define __NR_mount 40
++#endif
++
++#if !defined(__NR_pivot_root)
++#define __NR_pivot_root 41
++#endif
++
++#if !defined(__NR_nfsservctl)
++#define __NR_nfsservctl 42
++#endif
++
++#if !defined(__NR_statfs)
++#define __NR_statfs 43
++#endif
++
++#if !defined(__NR_fstatfs)
++#define __NR_fstatfs 44
++#endif
++
++#if !defined(__NR_truncate)
++#define __NR_truncate 45
++#endif
++
++#if !defined(__NR_ftruncate)
++#define __NR_ftruncate 46
++#endif
++
++#if !defined(__NR_fallocate)
++#define __NR_fallocate 47
++#endif
++
++#if !defined(__NR_faccessat)
++#define __NR_faccessat 48
++#endif
++
++#if !defined(__NR_chdir)
++#define __NR_chdir 49
++#endif
++
++#if !defined(__NR_fchdir)
++#define __NR_fchdir 50
++#endif
++
++#if !defined(__NR_chroot)
++#define __NR_chroot 51
++#endif
++
++#if !defined(__NR_fchmod)
++#define __NR_fchmod 52
++#endif
++
++#if !defined(__NR_fchmodat)
++#define __NR_fchmodat 53
++#endif
++
++#if !defined(__NR_fchownat)
++#define __NR_fchownat 54
++#endif
++
++#if !defined(__NR_fchown)
++#define __NR_fchown 55
++#endif
++
++#if !defined(__NR_openat)
++#define __NR_openat 56
++#endif
++
++#if !defined(__NR_close)
++#define __NR_close 57
++#endif
++
++#if !defined(__NR_vhangup)
++#define __NR_vhangup 58
++#endif
++
++#if !defined(__NR_pipe2)
++#define __NR_pipe2 59
++#endif
++
++#if !defined(__NR_quotactl)
++#define __NR_quotactl 60
++#endif
++
++#if !defined(__NR_getdents64)
++#define __NR_getdents64 61
++#endif
++
++#if !defined(__NR_lseek)
++#define __NR_lseek 62
++#endif
++
++#if !defined(__NR_read)
++#define __NR_read 63
++#endif
++
++#if !defined(__NR_write)
++#define __NR_write 64
++#endif
++
++#if !defined(__NR_readv)
++#define __NR_readv 65
++#endif
++
++#if !defined(__NR_writev)
++#define __NR_writev 66
++#endif
++
++#if !defined(__NR_pread64)
++#define __NR_pread64 67
++#endif
++
++#if !defined(__NR_pwrite64)
++#define __NR_pwrite64 68
++#endif
++
++#if !defined(__NR_preadv)
++#define __NR_preadv 69
++#endif
++
++#if !defined(__NR_pwritev)
++#define __NR_pwritev 70
++#endif
++
++#if !defined(__NR_sendfile)
++#define __NR_sendfile 71
++#endif
++
++#if !defined(__NR_pselect6)
++#define __NR_pselect6 72
++#endif
++
++#if !defined(__NR_ppoll)
++#define __NR_ppoll 73
++#endif
++
++#if !defined(__NR_signalfd4)
++#define __NR_signalfd4 74
++#endif
++
++#if !defined(__NR_vmsplice)
++#define __NR_vmsplice 75
++#endif
++
++#if !defined(__NR_splice)
++#define __NR_splice 76
++#endif
++
++#if !defined(__NR_tee)
++#define __NR_tee 77
++#endif
++
++#if !defined(__NR_readlinkat)
++#define __NR_readlinkat 78
++#endif
++
++#if !defined(__NR_newfstatat)
++#define __NR_newfstatat 79
++#endif
++
++#if !defined(__NR_fstat)
++#define __NR_fstat 80
++#endif
++
++#if !defined(__NR_sync)
++#define __NR_sync 81
++#endif
++
++#if !defined(__NR_fsync)
++#define __NR_fsync 82
++#endif
++
++#if !defined(__NR_fdatasync)
++#define __NR_fdatasync 83
++#endif
++
++#if !defined(__NR_sync_file_range)
++#define __NR_sync_file_range 84
++#endif
++
++#if !defined(__NR_timerfd_create)
++#define __NR_timerfd_create 85
++#endif
++
++#if !defined(__NR_timerfd_settime)
++#define __NR_timerfd_settime 86
++#endif
++
++#if !defined(__NR_timerfd_gettime)
++#define __NR_timerfd_gettime 87
++#endif
++
++#if !defined(__NR_utimensat)
++#define __NR_utimensat 88
++#endif
++
++#if !defined(__NR_acct)
++#define __NR_acct 89
++#endif
++
++#if !defined(__NR_capget)
++#define __NR_capget 90
++#endif
++
++#if !defined(__NR_capset)
++#define __NR_capset 91
++#endif
++
++#if !defined(__NR_personality)
++#define __NR_personality 92
++#endif
++
++#if !defined(__NR_exit)
++#define __NR_exit 93
++#endif
++
++#if !defined(__NR_exit_group)
++#define __NR_exit_group 94
++#endif
++
++#if !defined(__NR_waitid)
++#define __NR_waitid 95
++#endif
++
++#if !defined(__NR_set_tid_address)
++#define __NR_set_tid_address 96
++#endif
++
++#if !defined(__NR_unshare)
++#define __NR_unshare 97
++#endif
++
++#if !defined(__NR_futex)
++#define __NR_futex 98
++#endif
++
++#if !defined(__NR_set_robust_list)
++#define __NR_set_robust_list 99
++#endif
++
++#if !defined(__NR_get_robust_list)
++#define __NR_get_robust_list 100
++#endif
++
++#if !defined(__NR_nanosleep)
++#define __NR_nanosleep 101
++#endif
++
++#if !defined(__NR_getitimer)
++#define __NR_getitimer 102
++#endif
++
++#if !defined(__NR_setitimer)
++#define __NR_setitimer 103
++#endif
++
++#if !defined(__NR_kexec_load)
++#define __NR_kexec_load 104
++#endif
++
++#if !defined(__NR_init_module)
++#define __NR_init_module 105
++#endif
++
++#if !defined(__NR_delete_module)
++#define __NR_delete_module 106
++#endif
++
++#if !defined(__NR_timer_create)
++#define __NR_timer_create 107
++#endif
++
++#if !defined(__NR_timer_gettime)
++#define __NR_timer_gettime 108
++#endif
++
++#if !defined(__NR_timer_getoverrun)
++#define __NR_timer_getoverrun 109
++#endif
++
++#if !defined(__NR_timer_settime)
++#define __NR_timer_settime 110
++#endif
++
++#if !defined(__NR_timer_delete)
++#define __NR_timer_delete 111
++#endif
++
++#if !defined(__NR_clock_settime)
++#define __NR_clock_settime 112
++#endif
++
++#if !defined(__NR_clock_gettime)
++#define __NR_clock_gettime 113
++#endif
++
++#if !defined(__NR_clock_getres)
++#define __NR_clock_getres 114
++#endif
++
++#if !defined(__NR_clock_nanosleep)
++#define __NR_clock_nanosleep 115
++#endif
++
++#if !defined(__NR_syslog)
++#define __NR_syslog 116
++#endif
++
++#if !defined(__NR_ptrace)
++#define __NR_ptrace 117
++#endif
++
++#if !defined(__NR_sched_setparam)
++#define __NR_sched_setparam 118
++#endif
++
++#if !defined(__NR_sched_setscheduler)
++#define __NR_sched_setscheduler 119
++#endif
++
++#if !defined(__NR_sched_getscheduler)
++#define __NR_sched_getscheduler 120
++#endif
++
++#if !defined(__NR_sched_getparam)
++#define __NR_sched_getparam 121
++#endif
++
++#if !defined(__NR_sched_setaffinity)
++#define __NR_sched_setaffinity 122
++#endif
++
++#if !defined(__NR_sched_getaffinity)
++#define __NR_sched_getaffinity 123
++#endif
++
++#if !defined(__NR_sched_yield)
++#define __NR_sched_yield 124
++#endif
++
++#if !defined(__NR_sched_get_priority_max)
++#define __NR_sched_get_priority_max 125
++#endif
++
++#if !defined(__NR_sched_get_priority_min)
++#define __NR_sched_get_priority_min 126
++#endif
++
++#if !defined(__NR_sched_rr_get_interval)
++#define __NR_sched_rr_get_interval 127
++#endif
++
++#if !defined(__NR_restart_syscall)
++#define __NR_restart_syscall 128
++#endif
++
++#if !defined(__NR_kill)
++#define __NR_kill 129
++#endif
++
++#if !defined(__NR_tkill)
++#define __NR_tkill 130
++#endif
++
++#if !defined(__NR_tgkill)
++#define __NR_tgkill 131
++#endif
++
++#if !defined(__NR_sigaltstack)
++#define __NR_sigaltstack 132
++#endif
++
++#if !defined(__NR_rt_sigsuspend)
++#define __NR_rt_sigsuspend 133
++#endif
++
++#if !defined(__NR_rt_sigaction)
++#define __NR_rt_sigaction 134
++#endif
++
++#if !defined(__NR_rt_sigprocmask)
++#define __NR_rt_sigprocmask 135
++#endif
++
++#if !defined(__NR_rt_sigpending)
++#define __NR_rt_sigpending 136
++#endif
++
++#if !defined(__NR_rt_sigtimedwait)
++#define __NR_rt_sigtimedwait 137
++#endif
++
++#if !defined(__NR_rt_sigqueueinfo)
++#define __NR_rt_sigqueueinfo 138
++#endif
++
++#if !defined(__NR_rt_sigreturn)
++#define __NR_rt_sigreturn 139
++#endif
++
++#if !defined(__NR_setpriority)
++#define __NR_setpriority 140
++#endif
++
++#if !defined(__NR_getpriority)
++#define __NR_getpriority 141
++#endif
++
++#if !defined(__NR_reboot)
++#define __NR_reboot 142
++#endif
++
++#if !defined(__NR_setregid)
++#define __NR_setregid 143
++#endif
++
++#if !defined(__NR_setgid)
++#define __NR_setgid 144
++#endif
++
++#if !defined(__NR_setreuid)
++#define __NR_setreuid 145
++#endif
++
++#if !defined(__NR_setuid)
++#define __NR_setuid 146
++#endif
++
++#if !defined(__NR_setresuid)
++#define __NR_setresuid 147
++#endif
++
++#if !defined(__NR_getresuid)
++#define __NR_getresuid 148
++#endif
++
++#if !defined(__NR_setresgid)
++#define __NR_setresgid 149
++#endif
++
++#if !defined(__NR_getresgid)
++#define __NR_getresgid 150
++#endif
++
++#if !defined(__NR_setfsuid)
++#define __NR_setfsuid 151
++#endif
++
++#if !defined(__NR_setfsgid)
++#define __NR_setfsgid 152
++#endif
++
++#if !defined(__NR_times)
++#define __NR_times 153
++#endif
++
++#if !defined(__NR_setpgid)
++#define __NR_setpgid 154
++#endif
++
++#if !defined(__NR_getpgid)
++#define __NR_getpgid 155
++#endif
++
++#if !defined(__NR_getsid)
++#define __NR_getsid 156
++#endif
++
++#if !defined(__NR_setsid)
++#define __NR_setsid 157
++#endif
++
++#if !defined(__NR_getgroups)
++#define __NR_getgroups 158
++#endif
++
++#if !defined(__NR_setgroups)
++#define __NR_setgroups 159
++#endif
++
++#if !defined(__NR_uname)
++#define __NR_uname 160
++#endif
++
++#if !defined(__NR_sethostname)
++#define __NR_sethostname 161
++#endif
++
++#if !defined(__NR_setdomainname)
++#define __NR_setdomainname 162
++#endif
++
++#if !defined(__NR_getrlimit)
++#define __NR_getrlimit 163
++#endif
++
++#if !defined(__NR_setrlimit)
++#define __NR_setrlimit 164
++#endif
++
++#if !defined(__NR_getrusage)
++#define __NR_getrusage 165
++#endif
++
++#if !defined(__NR_umask)
++#define __NR_umask 166
++#endif
++
++#if !defined(__NR_prctl)
++#define __NR_prctl 167
++#endif
++
++#if !defined(__NR_getcpu)
++#define __NR_getcpu 168
++#endif
++
++#if !defined(__NR_gettimeofday)
++#define __NR_gettimeofday 169
++#endif
++
++#if !defined(__NR_settimeofday)
++#define __NR_settimeofday 170
++#endif
++
++#if !defined(__NR_adjtimex)
++#define __NR_adjtimex 171
++#endif
++
++#if !defined(__NR_getpid)
++#define __NR_getpid 172
++#endif
++
++#if !defined(__NR_getppid)
++#define __NR_getppid 173
++#endif
++
++#if !defined(__NR_getuid)
++#define __NR_getuid 174
++#endif
++
++#if !defined(__NR_geteuid)
++#define __NR_geteuid 175
++#endif
++
++#if !defined(__NR_getgid)
++#define __NR_getgid 176
++#endif
++
++#if !defined(__NR_getegid)
++#define __NR_getegid 177
++#endif
++
++#if !defined(__NR_gettid)
++#define __NR_gettid 178
++#endif
++
++#if !defined(__NR_sysinfo)
++#define __NR_sysinfo 179
++#endif
++
++#if !defined(__NR_mq_open)
++#define __NR_mq_open 180
++#endif
++
++#if !defined(__NR_mq_unlink)
++#define __NR_mq_unlink 181
++#endif
++
++#if !defined(__NR_mq_timedsend)
++#define __NR_mq_timedsend 182
++#endif
++
++#if !defined(__NR_mq_timedreceive)
++#define __NR_mq_timedreceive 183
++#endif
++
++#if !defined(__NR_mq_notify)
++#define __NR_mq_notify 184
++#endif
++
++#if !defined(__NR_mq_getsetattr)
++#define __NR_mq_getsetattr 185
++#endif
++
++#if !defined(__NR_msgget)
++#define __NR_msgget 186
++#endif
++
++#if !defined(__NR_msgctl)
++#define __NR_msgctl 187
++#endif
++
++#if !defined(__NR_msgrcv)
++#define __NR_msgrcv 188
++#endif
++
++#if !defined(__NR_msgsnd)
++#define __NR_msgsnd 189
++#endif
++
++#if !defined(__NR_semget)
++#define __NR_semget 190
++#endif
++
++#if !defined(__NR_semctl)
++#define __NR_semctl 191
++#endif
++
++#if !defined(__NR_semtimedop)
++#define __NR_semtimedop 192
++#endif
++
++#if !defined(__NR_semop)
++#define __NR_semop 193
++#endif
++
++#if !defined(__NR_shmget)
++#define __NR_shmget 194
++#endif
++
++#if !defined(__NR_shmctl)
++#define __NR_shmctl 195
++#endif
++
++#if !defined(__NR_shmat)
++#define __NR_shmat 196
++#endif
++
++#if !defined(__NR_shmdt)
++#define __NR_shmdt 197
++#endif
++
++#if !defined(__NR_socket)
++#define __NR_socket 198
++#endif
++
++#if !defined(__NR_socketpair)
++#define __NR_socketpair 199
++#endif
++
++#if !defined(__NR_bind)
++#define __NR_bind 200
++#endif
++
++#if !defined(__NR_listen)
++#define __NR_listen 201
++#endif
++
++#if !defined(__NR_accept)
++#define __NR_accept 202
++#endif
++
++#if !defined(__NR_connect)
++#define __NR_connect 203
++#endif
++
++#if !defined(__NR_getsockname)
++#define __NR_getsockname 204
++#endif
++
++#if !defined(__NR_getpeername)
++#define __NR_getpeername 205
++#endif
++
++#if !defined(__NR_sendto)
++#define __NR_sendto 206
++#endif
++
++#if !defined(__NR_recvfrom)
++#define __NR_recvfrom 207
++#endif
++
++#if !defined(__NR_setsockopt)
++#define __NR_setsockopt 208
++#endif
++
++#if !defined(__NR_getsockopt)
++#define __NR_getsockopt 209
++#endif
++
++#if !defined(__NR_shutdown)
++#define __NR_shutdown 210
++#endif
++
++#if !defined(__NR_sendmsg)
++#define __NR_sendmsg 211
++#endif
++
++#if !defined(__NR_recvmsg)
++#define __NR_recvmsg 212
++#endif
++
++#if !defined(__NR_readahead)
++#define __NR_readahead 213
++#endif
++
++#if !defined(__NR_brk)
++#define __NR_brk 214
++#endif
++
++#if !defined(__NR_munmap)
++#define __NR_munmap 215
++#endif
++
++#if !defined(__NR_mremap)
++#define __NR_mremap 216
++#endif
++
++#if !defined(__NR_add_key)
++#define __NR_add_key 217
++#endif
++
++#if !defined(__NR_request_key)
++#define __NR_request_key 218
++#endif
++
++#if !defined(__NR_keyctl)
++#define __NR_keyctl 219
++#endif
++
++#if !defined(__NR_clone)
++#define __NR_clone 220
++#endif
++
++#if !defined(__NR_execve)
++#define __NR_execve 221
++#endif
++
++#if !defined(__NR_mmap)
++#define __NR_mmap 222
++#endif
++
++#if !defined(__NR_fadvise64)
++#define __NR_fadvise64 223
++#endif
++
++#if !defined(__NR_swapon)
++#define __NR_swapon 224
++#endif
++
++#if !defined(__NR_swapoff)
++#define __NR_swapoff 225
++#endif
++
++#if !defined(__NR_mprotect)
++#define __NR_mprotect 226
++#endif
++
++#if !defined(__NR_msync)
++#define __NR_msync 227
++#endif
++
++#if !defined(__NR_mlock)
++#define __NR_mlock 228
++#endif
++
++#if !defined(__NR_munlock)
++#define __NR_munlock 229
++#endif
++
++#if !defined(__NR_mlockall)
++#define __NR_mlockall 230
++#endif
++
++#if !defined(__NR_munlockall)
++#define __NR_munlockall 231
++#endif
++
++#if !defined(__NR_mincore)
++#define __NR_mincore 232
++#endif
++
++#if !defined(__NR_madvise)
++#define __NR_madvise 233
++#endif
++
++#if !defined(__NR_remap_file_pages)
++#define __NR_remap_file_pages 234
++#endif
++
++#if !defined(__NR_mbind)
++#define __NR_mbind 235
++#endif
++
++#if !defined(__NR_get_mempolicy)
++#define __NR_get_mempolicy 236
++#endif
++
++#if !defined(__NR_set_mempolicy)
++#define __NR_set_mempolicy 237
++#endif
++
++#if !defined(__NR_migrate_pages)
++#define __NR_migrate_pages 238
++#endif
++
++#if !defined(__NR_move_pages)
++#define __NR_move_pages 239
++#endif
++
++#if !defined(__NR_rt_tgsigqueueinfo)
++#define __NR_rt_tgsigqueueinfo 240
++#endif
++
++#if !defined(__NR_perf_event_open)
++#define __NR_perf_event_open 241
++#endif
++
++#if !defined(__NR_accept4)
++#define __NR_accept4 242
++#endif
++
++#if !defined(__NR_recvmmsg)
++#define __NR_recvmmsg 243
++#endif
++
++#if !defined(__NR_wait4)
++#define __NR_wait4 260
++#endif
++
++#if !defined(__NR_prlimit64)
++#define __NR_prlimit64 261
++#endif
++
++#if !defined(__NR_fanotify_init)
++#define __NR_fanotify_init 262
++#endif
++
++#if !defined(__NR_fanotify_mark)
++#define __NR_fanotify_mark 263
++#endif
++
++#if !defined(__NR_name_to_handle_at)
++#define __NR_name_to_handle_at 264
++#endif
++
++#if !defined(__NR_open_by_handle_at)
++#define __NR_open_by_handle_at 265
++#endif
++
++#if !defined(__NR_clock_adjtime)
++#define __NR_clock_adjtime 266
++#endif
++
++#if !defined(__NR_syncfs)
++#define __NR_syncfs 267
++#endif
++
++#if !defined(__NR_setns)
++#define __NR_setns 268
++#endif
++
++#if !defined(__NR_sendmmsg)
++#define __NR_sendmmsg 269
++#endif
++
++#if !defined(__NR_process_vm_readv)
++#define __NR_process_vm_readv 270
++#endif
++
++#if !defined(__NR_process_vm_writev)
++#define __NR_process_vm_writev 271
++#endif
++
++#if !defined(__NR_kcmp)
++#define __NR_kcmp 272
++#endif
++
++#if !defined(__NR_finit_module)
++#define __NR_finit_module 273
++#endif
++
++#if !defined(__NR_sched_setattr)
++#define __NR_sched_setattr 274
++#endif
++
++#if !defined(__NR_sched_getattr)
++#define __NR_sched_getattr 275
++#endif
++
++#if !defined(__NR_renameat2)
++#define __NR_renameat2 276
++#endif
++
++#if !defined(__NR_seccomp)
++#define __NR_seccomp 277
++#endif
++
++#if !defined(__NR_getrandom)
++#define __NR_getrandom 278
++#endif
++
++#if !defined(__NR_memfd_create)
++#define __NR_memfd_create 279
++#endif
++
++#if !defined(__NR_bfp)
++#define __NR_bfp 280
++#endif
++
++#if !defined(__NR_execveat)
++#define __NR_execveat 281
++#endif
++
++#if !defined(__NR_userfaultfd)
++#define __NR_userfaultfd 282
++#endif
++
++#if !defined(__NR_membarrier)
++#define __NR_membarrier 283
++#endif
++
++#if !defined(__NR_memlock2)
++#define __NR_memlock2 284
++#endif
++
++#if !defined(__NR_copy_file_range)
++#define __NR_copy_file_range 285
++#endif
++
++#if !defined(__NR_preadv2)
++#define __NR_preadv2 286
++#endif
++
++#if !defined(__NR_pwritev2)
++#define __NR_pwritev2 287
++#endif
++
++#if !defined(__NR_pkey_mprotect)
++#define __NR_pkey_mprotect 288
++#endif
++
++#if !defined(__NR_pkey_alloc)
++#define __NR_pkey_alloc 289
++#endif
++
++#if !defined(__NR_pkey_free)
++#define __NR_pkey_free 290
++#endif
++
++#if !defined(__NR_statx)
++#define __NR_statx 291
++#endif
++
++#if !defined(__NR_io_pgetevents)
++#define __NR_io_pgetevents 292
++#endif
++
++#if !defined(__NR_rseq)
++#define __NR_rseq 293
++#endif
++
++#if !defined(__NR_kexec_file_load)
++#define __NR_kexec_file_load 294
++#endif
++
++#if !defined(__NR_pidfd_send_signal)
++#define __NR_pidfd_send_signal 424
++#endif
++
++#if !defined(__NR_io_uring_setup)
++#define __NR_io_uring_setup 425
++#endif
++
++#if !defined(__NR_io_uring_enter)
++#define __NR_io_uring_enter 426
++#endif
++
++#if !defined(__NR_io_uring_register)
++#define __NR_io_uring_register 427
++#endif
++
++#if !defined(__NR_open_tree)
++#define __NR_open_tree 428
++#endif
++
++#if !defined(__NR_move_mount)
++#define __NR_move_mount 429
++#endif
++
++#if !defined(__NR_fsopen)
++#define __NR_fsopen 430
++#endif
++
++#if !defined(__NR_fsconfig)
++#define __NR_fsconfig 431
++#endif
++
++#if !defined(__NR_fsmount)
++#define __NR_fsmount 432
++#endif
++
++#if !defined(__NR_fspick)
++#define __NR_fspick 433
++#endif
++
++#if !defined(__NR_pidfd_open)
++#define __NR_pidfd_open 434
++#endif
++
++#if !defined(__NR_clone3)
++#define __NR_clone3 435
++#endif
++
++#if !defined(__NR_close_range)
++#define __NR_close_range 436
++#endif
++
++#if !defined(__NR_openat2)
++#define __NR_openat2 437
++#endif
++
++#if !defined(__NR_pidfd_getfd)
++#define __NR_pidfd_getfd 438
++#endif
++
++#if !defined(__NR_faccessat2)
++#define __NR_faccessat2 439
++#endif
++
++#if !defined(__NR_process_madvise)
++#define __NR_process_madvise 440
++#endif
++
++#if !defined(__NR_epoll_pwait2)
++#define __NR_epoll_pwait2 441
++#endif
++
++#if !defined(__NR_mount_setattr)
++#define __NR_mount_setattr 442
++#endif
++
++#if !defined(__NR_quotactl_path)
++#define __NR_quotactl_path 443
++#endif
++
++#if !defined(__NR_landlock_create_ruleset)
++#define __NR_landlock_create_ruleset 444
++#endif
++
++#if !defined(__NR_landlock_add_rule)
++#define __NR_landlock_add_rule 445
++#endif
++
++#if !defined(__NR_landlock_restrict_self)
++#define __NR_landlock_restrict_self 446
++#endif
++
++#endif  // SANDBOX_LINUX_SYSTEM_HEADERS_LOONG64_LINUX_SYSCALLS_H_
+diff --git a/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc b/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
+index df2567f7498..42275afc1dc 100644
+--- a/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_cros_amd_gpu_policy_linux.cc
+@@ -38,7 +38,7 @@ ResultExpr CrosAmdGpuProcessPolicy::EvaluateSyscall(int sysno) const {
+     case __NR_sched_setscheduler:
+     case __NR_sysinfo:
+     case __NR_uname:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_readlink:
+     case __NR_stat:
+ #endif
+diff --git a/sandbox/policy/linux/bpf_gpu_policy_linux.cc b/sandbox/policy/linux/bpf_gpu_policy_linux.cc
+index 35ccbb7a7f8..b40cae7a96d 100644
+--- a/sandbox/policy/linux/bpf_gpu_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_gpu_policy_linux.cc
+@@ -73,7 +73,7 @@ ResultExpr GpuProcessPolicy::EvaluateSyscall(int sysno) const {
+     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
+     case __NR_ftruncate64:
+ #endif
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_getdents:
+ #endif
+     case __NR_getdents64:
+diff --git a/sandbox/policy/linux/bpf_network_policy_linux.cc b/sandbox/policy/linux/bpf_network_policy_linux.cc
+index 482f5a940a8..77e9ddfbab8 100644
+--- a/sandbox/policy/linux/bpf_network_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_network_policy_linux.cc
+@@ -235,7 +235,7 @@ ResultExpr NetworkProcessPolicy::EvaluateSyscall(int sysno) const {
+     case __NR_fdatasync:
+     case __NR_fsync:
+     case __NR_mremap:
+-#if !defined(__aarch64__)
++#if !defined(__aarch64__) && !defined(__loongarch64)
+     case __NR_getdents:
+ #endif
+     case __NR_getdents64:
+diff --git a/skia/BUILD.gn b/skia/BUILD.gn
+index ea7cfd9e317..1ec46de79f6 100644
+--- a/skia/BUILD.gn
++++ b/skia/BUILD.gn
+@@ -758,6 +758,8 @@ skia_source_set("skia_opts") {
+     # Conditional and empty body needed to avoid assert() below.
+   } else if (current_cpu == "riscv64") {
+     # Conditional and empty body needed to avoid assert() below.
++  } else if (current_cpu == "loong64") {
++    # Conditional and empty body needed to avoid assert() below.
+   } else {
+     assert(false, "Unknown cpu target")
+   }
+diff --git a/third_party/blink/renderer/core/layout/ng/grid/ng_grid_layout_algorithm.cc b/third_party/blink/renderer/core/layout/ng/grid/ng_grid_layout_algorithm.cc
+index af5ab8890e7..a476b05a8eb 100644
+--- a/third_party/blink/renderer/core/layout/ng/grid/ng_grid_layout_algorithm.cc
++++ b/third_party/blink/renderer/core/layout/ng/grid/ng_grid_layout_algorithm.cc
+@@ -520,8 +520,12 @@ wtf_size_t NGGridLayoutAlgorithm::BuildGridSizingSubtree(
+                                 row_auto_repetitions);
+ 
+   bool has_nested_subgrid = false;
+-  auto& [grid_items, layout_data, subtree_size] =
+-      sizing_tree->CreateSizingData(opt_subgrid_data);
++  auto& grid_tree_node = sizing_tree->CreateSizingData(opt_subgrid_data);
++  auto& grid_items = grid_tree_node.grid_items;
++  auto& layout_data = grid_tree_node.layout_data;
++  auto& subtree_size = grid_tree_node.subtree_size;
++  //auto& [grid_items, layout_data, subtree_size] =
++  //    sizing_tree->CreateSizingData(opt_subgrid_data);
+ 
+   if (!must_ignore_children) {
+     // Construct grid items that are not subgridded.
+@@ -1640,8 +1644,12 @@ void NGGridLayoutAlgorithm::InitializeTrackSizes(
+     const absl::optional<GridTrackSizingDirection>& opt_track_direction) const {
+   DCHECK(sizing_subtree);
+ 
+-  auto& [grid_items, layout_data, subtree_size] =
+-      sizing_subtree.SubtreeRootData();
++  auto& grid_tree_node = sizing_subtree.SubtreeRootData();
++  auto& grid_items = grid_tree_node.grid_items;
++  auto& layout_data = grid_tree_node.layout_data;
++  auto& subtree_size = grid_tree_node.subtree_size;
++  //auto& [grid_items, layout_data, subtree_size] =
++  //    sizing_subtree.SubtreeRootData();
+ 
+   auto InitAndCacheTrackSizes = [&](GridTrackSizingDirection track_direction) {
+     InitializeTrackCollection(opt_subgrid_data, track_direction, &layout_data);
+diff --git a/third_party/boringssl/src/include/openssl/base.h b/third_party/boringssl/src/include/openssl/base.h
+index 80d18a78d8a..e86780954f8 100644
+--- a/third_party/boringssl/src/include/openssl/base.h
++++ b/third_party/boringssl/src/include/openssl/base.h
+@@ -107,6 +107,9 @@ extern "C" {
+ #define OPENSSL_RISCV64
+ #elif defined(__riscv) && __SIZEOF_POINTER__ == 4
+ #define OPENSSL_32_BIT
++#elif defined(__loongarch64)
++#define OPENSSL_64_BIT
++#define OPENSSL_LOONG64
+ #elif defined(__pnacl__)
+ #define OPENSSL_32_BIT
+ #define OPENSSL_PNACL
+diff --git a/third_party/crashpad/crashpad/client/crashpad_client_linux.cc b/third_party/crashpad/crashpad/client/crashpad_client_linux.cc
+index 630c24f115c..84bf3c3fa93 100644
+--- a/third_party/crashpad/crashpad/client/crashpad_client_linux.cc
++++ b/third_party/crashpad/crashpad/client/crashpad_client_linux.cc
+@@ -163,7 +163,9 @@ class SignalHandler {
+     exception_information_.context_address =
+         FromPointerCast<decltype(exception_information_.context_address)>(
+             context);
++#if !defined(__loongarch64)
+     exception_information_.thread_id = sys_gettid();
++#endif
+ 
+     ScopedPrSetDumpable set_dumpable(false);
+     HandleCrashImpl();
+@@ -296,7 +298,9 @@ class LaunchAtCrashHandler : public SignalHandler {
+   }
+ 
+   void HandleCrashImpl() override {
++#if !defined(__loongarch64)
+     ScopedPrSetPtracer set_ptracer(sys_getpid(), /* may_log= */ false);
++#endif
+ 
+     pid_t pid = fork();
+     if (pid < 0) {
+diff --git a/third_party/crashpad/crashpad/minidump/minidump_misc_info_writer.cc b/third_party/crashpad/crashpad/minidump/minidump_misc_info_writer.cc
+index 133ae3086aa..ef97dde6f89 100644
+--- a/third_party/crashpad/crashpad/minidump/minidump_misc_info_writer.cc
++++ b/third_party/crashpad/crashpad/minidump/minidump_misc_info_writer.cc
+@@ -175,6 +175,8 @@ std::string MinidumpMiscInfoDebugBuildString() {
+   static constexpr char kCPU[] = "mips";
+ #elif defined(ARCH_CPU_MIPS64EL)
+   static constexpr char kCPU[] = "mips64";
++#elif defined(ARCH_CPU_LOONG64)
++  static constexpr char kCPU[] = "loong64";
+ #else
+ #error define kCPU for this CPU
+ #endif
+diff --git a/third_party/crashpad/crashpad/snapshot/capture_memory.cc b/third_party/crashpad/crashpad/snapshot/capture_memory.cc
+index 0a465d22f60..ceb328e2552 100644
+--- a/third_party/crashpad/crashpad/snapshot/capture_memory.cc
++++ b/third_party/crashpad/crashpad/snapshot/capture_memory.cc
+@@ -113,7 +113,7 @@ void CaptureMemory::PointedToByContext(const CPUContext& context,
+       MaybeCaptureMemoryAround(delegate, context.arm->regs[i]);
+     }
+   }
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+   for (size_t i = 0; i < std::size(context.mipsel->regs); ++i) {
+     MaybeCaptureMemoryAround(delegate, context.mipsel->regs[i]);
+   }
+diff --git a/third_party/crashpad/crashpad/snapshot/cpu_architecture.h b/third_party/crashpad/crashpad/snapshot/cpu_architecture.h
+index 4003a9290f4..949dd1e1418 100644
+--- a/third_party/crashpad/crashpad/snapshot/cpu_architecture.h
++++ b/third_party/crashpad/crashpad/snapshot/cpu_architecture.h
+@@ -43,7 +43,10 @@ enum CPUArchitecture {
+   kCPUArchitectureMIPSEL,
+ 
+   //! \brief 64-bit MIPSEL.
+-  kCPUArchitectureMIPS64EL
++  kCPUArchitectureMIPS64EL,
++
++  //! \brief 64-bit LoongArch.
++  kCPUArchitectureLOONG64
+ };
+ 
+ }  // namespace crashpad
+diff --git a/third_party/crashpad/crashpad/snapshot/cpu_context.h b/third_party/crashpad/crashpad/snapshot/cpu_context.h
+index 7bc252be15c..da94c59da7c 100644
+--- a/third_party/crashpad/crashpad/snapshot/cpu_context.h
++++ b/third_party/crashpad/crashpad/snapshot/cpu_context.h
+@@ -362,6 +362,28 @@ struct CPUContextMIPS64 {
+   uint64_t fir;
+ };
+ 
++struct CPUContextLOONG64 {
++  uint64_t regs[32];
++  uint64_t mdlo;
++  uint64_t mdhi;
++  uint64_t cp0_epc;
++  uint64_t cp0_badvaddr;
++  uint64_t cp0_status;
++  uint64_t cp0_cause;
++  uint64_t hi[3];
++  uint64_t lo[3];
++  uint64_t dsp_control;
++  union {
++    double dregs[32];
++    struct {
++      float _fp_fregs;
++      uint32_t _fp_pad;
++    } fregs[32];
++  } fpregs;
++  uint64_t fpcsr;
++  uint64_t fir;
++};
++
+ //! \brief A context structure capable of carrying the context of any supported
+ //!     CPU architecture.
+ struct CPUContext {
+@@ -402,6 +424,7 @@ struct CPUContext {
+     CPUContextARM64* arm64;
+     CPUContextMIPS* mipsel;
+     CPUContextMIPS64* mips64;
++    CPUContextLOONG64* loong64;
+   };
+ };
+ 
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/cpu_context_linux.h b/third_party/crashpad/crashpad/snapshot/linux/cpu_context_linux.h
+index 1ea5eecda68..5498ddcb799 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/cpu_context_linux.h
++++ b/third_party/crashpad/crashpad/snapshot/linux/cpu_context_linux.h
+@@ -171,7 +171,23 @@ void InitializeCPUContextMIPS(
+   context->fpcsr = float_context.fpcsr;
+   context->fir = float_context.fpu_id;
+ }
+-
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++//! \brief Initializes a CPUContextMIPS structure from native context
++//!     structures on Linux.
++//!
++//! This function has template specializations for MIPSEL and MIPS64EL
++//! architecture contexts, using ContextTraits32 or ContextTraits64 as template
++//! parameter, respectively.
++//!
++//! \param[in] thread_context The native thread context.
++//! \param[in] float_context The native float context.
++//! \param[out] context The CPUContextMIPS structure to initialize.
++template <typename Traits>
++void InitializeCPUContextLOONG64(
++    const typename Traits::SignalThreadContext& thread_context,
++    const typename Traits::SignalFloatContext& float_context,
++    typename Traits::CPUContext* context) {
++}
+ #endif  // ARCH_CPU_MIPS_FAMILY || DOXYGEN
+ 
+ }  // namespace internal
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc b/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc
+index 4e6ec11f8bd..2c0299f99f3 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc
++++ b/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.cc
+@@ -325,6 +325,60 @@ bool ExceptionSnapshotLinux::ReadContext<ContextTraits64>(
+       reader, context_address, context_.mips64);
+ }
+ 
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++template <typename Traits>
++static bool ReadContext(ProcessReaderLinux* reader,
++                        LinuxVMAddress context_address,
++                        typename Traits::CPUContext* dest_context) {
++  //const ProcessMemory* memory = reader->Memory();
++
++  //LinuxVMAddress gregs_address = context_address +
++  //                               offsetof(UContext<Traits>, mcontext) +
++  //                               offsetof(typename Traits::MContext, gregs);
++
++  //typename Traits::SignalThreadContext thread_context;
++  //if (!memory->Read(gregs_address, sizeof(thread_context), &thread_context)) {
++  //  LOG(ERROR) << "Couldn't read gregs";
++  //  return false;
++  //}
++
++  //LinuxVMAddress fpregs_address = context_address +
++  //                                offsetof(UContext<Traits>, mcontext) +
++  //                                offsetof(typename Traits::MContext, fpregs);
++
++  //typename Traits::SignalFloatContext fp_context;
++  //if (!memory->Read(fpregs_address, sizeof(fp_context), &fp_context)) {
++  //  LOG(ERROR) << "Couldn't read fpregs";
++  //  return false;
++  //}
++
++  //InitializeCPUContextLOONG64<Traits>(thread_context, fp_context, dest_context);
++
++  return true;
++}
++
++template <>
++bool ExceptionSnapshotLinux::ReadContext<ContextTraits32>(
++    ProcessReaderLinux* reader,
++    LinuxVMAddress context_address) {
++  context_.architecture = kCPUArchitectureLOONG64;
++  context_.loong64 = &context_union_.loong64;
++
++  return internal::ReadContext<ContextTraits32>(
++      reader, context_address, context_.loong64);
++}
++
++template <>
++bool ExceptionSnapshotLinux::ReadContext<ContextTraits64>(
++    ProcessReaderLinux* reader,
++    LinuxVMAddress context_address) {
++  context_.architecture = kCPUArchitectureLOONG64;
++  context_.loong64 = &context_union_.loong64;
++
++  return internal::ReadContext<ContextTraits64>(
++      reader, context_address, context_.loong64);
++}
++
+ #endif  // ARCH_CPU_X86_FAMILY
+ 
+ bool ExceptionSnapshotLinux::Initialize(
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.h b/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.h
+index 3ea3d931fe0..e6a0f8b65aa 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.h
++++ b/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux.h
+@@ -89,6 +89,8 @@ class ExceptionSnapshotLinux final : public ExceptionSnapshot {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+     CPUContextMIPS mipsel;
+     CPUContextMIPS64 mips64;
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++    CPUContextLOONG64 loong64;
+ #endif
+   } context_union_;
+   CPUContext context_;
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux_test.cc b/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux_test.cc
+index b0c75b98a06..bfe3d3a0217 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux_test.cc
++++ b/third_party/crashpad/crashpad/snapshot/linux/exception_snapshot_linux_test.cc
+@@ -297,6 +297,27 @@ void ExpectContext(const CPUContext& actual, const NativeCPUContext& expected) {
+             0);
+ #undef CPU_ARCH_NAME
+ }
++#elif defined(ARCH_CPU_LOONG64)
++using NativeCPUContext = ucontext_t;
++
++void InitializeContext(NativeCPUContext* context) {
++  for (size_t reg = 0; reg < std::size(context->uc_mcontext.__gregs); ++reg) {
++    context->uc_mcontext.__gregs[reg] = reg;
++  }
++  memset(&context->uc_mcontext.__fpregs, 44, sizeof(context->uc_mcontext.__fpregs));
++}
++void ExpectContext(const CPUContext& actual, const NativeCPUContext& expected) {
++#define CPU_ARCH_NAME loong64
++  EXPECT_EQ(actual.architecture, kCPUArchitectureLOONG64);
++  for (size_t reg = 0; reg < std::size(expected.uc_mcontext.__gregs); ++reg) {
++    EXPECT_EQ(actual.loong64->regs[reg], expected.uc_mcontext.__gregs[reg]);
++  }
++
++  EXPECT_EQ(memcmp(&actual.CPU_ARCH_NAME->fpregs,
++                   &expected.uc_mcontext.__fpregs,
++                   sizeof(actual.CPU_ARCH_NAME->fpregs)),
++            0);
++}
+ 
+ #else
+ #error Port.
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/process_reader_linux.cc b/third_party/crashpad/crashpad/snapshot/linux/process_reader_linux.cc
+index 8ec0edc6dab..1417a5ce9e5 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/process_reader_linux.cc
++++ b/third_party/crashpad/crashpad/snapshot/linux/process_reader_linux.cc
+@@ -127,6 +127,9 @@ void ProcessReaderLinux::Thread::InitializeStack(ProcessReaderLinux* reader) {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+   stack_pointer = reader->Is64Bit() ? thread_info.thread_context.t64.regs[29]
+                                     : thread_info.thread_context.t32.regs[29];
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++  stack_pointer = reader->Is64Bit() ? thread_info.thread_context.t64.regs[29]
++                                    : thread_info.thread_context.t32.regs[29];
+ #else
+ #error Port.
+ #endif
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/signal_context.h b/third_party/crashpad/crashpad/snapshot/linux/signal_context.h
+index 6ac7adea478..aa8583193c6 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/signal_context.h
++++ b/third_party/crashpad/crashpad/snapshot/linux/signal_context.h
+@@ -422,6 +422,98 @@ static_assert(offsetof(UContext<ContextTraits64>, mcontext.fpregs) ==
+               "context offset mismatch");
+ #endif
+ 
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++//TODO
++struct MContext32 {
++  uint32_t regmask;
++  uint32_t status;
++  uint64_t pc;
++  uint64_t gregs[32];
++  struct {
++    float _fp_fregs;
++    unsigned int _fp_pad;
++  } fpregs[32];
++  uint32_t fp_owned;
++  uint32_t fpc_csr;
++  uint32_t fpc_eir;
++  uint32_t used_math;
++  uint32_t dsp;
++  uint64_t mdhi;
++  uint64_t mdlo;
++  uint32_t hi1;
++  uint32_t lo1;
++  uint32_t hi2;
++  uint32_t lo2;
++  uint32_t hi3;
++  uint32_t lo3;
++};
++
++struct MContext64 {
++  uint64_t gregs[32];
++  double fpregs[32];
++  uint64_t mdhi;
++  uint64_t hi1;
++  uint64_t hi2;
++  uint64_t hi3;
++  uint64_t mdlo;
++  uint64_t lo1;
++  uint64_t lo2;
++  uint64_t lo3;
++  uint64_t pc;
++  uint32_t fpc_csr;
++  uint32_t used_math;
++  uint32_t dsp;
++  uint32_t __glibc_reserved1;
++};
++
++struct SignalThreadContext32 {
++  uint64_t regs[32];
++  uint32_t lo;
++  uint32_t hi;
++  uint32_t cp0_epc;
++  uint32_t cp0_badvaddr;
++  uint32_t cp0_status;
++  uint32_t cp0_cause;
++
++  SignalThreadContext32() {}
++  explicit SignalThreadContext32(
++      const struct ThreadContext::t32_t& thread_context) {
++    for (size_t reg = 0; reg < 32; ++reg) {
++      regs[reg] = thread_context.regs[reg];
++    }
++    lo = thread_context.lo;
++    hi = thread_context.hi;
++    cp0_epc = thread_context.cp0_epc;
++    cp0_badvaddr = thread_context.cp0_badvaddr;
++    cp0_status = thread_context.cp0_status;
++    cp0_cause = thread_context.cp0_cause;
++  }
++};
++
++struct ContextTraits32 : public Traits32 {
++  using MContext = MContext32;
++  using SignalThreadContext = SignalThreadContext32;
++  using SignalFloatContext = FloatContext::f32_t;
++  using CPUContext = CPUContextLOONG64;
++};
++
++struct ContextTraits64 : public Traits64 {
++  using MContext = MContext64;
++  using SignalThreadContext = ThreadContext::t64_t;
++  using SignalFloatContext = FloatContext::f64_t;
++  using CPUContext = CPUContextLOONG64;
++};
++
++template <typename Traits>
++struct UContext {
++  typename Traits::ULong flags;
++  typename Traits::Address link;
++  SignalStack<Traits> stack;
++  typename Traits::ULong_32Only alignment_padding_;
++  typename Traits::MContext mcontext;
++  Sigset<Traits> sigmask;
++};
++
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/system_snapshot_linux.cc b/third_party/crashpad/crashpad/snapshot/linux/system_snapshot_linux.cc
+index 84871551018..2fd49a40c31 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/system_snapshot_linux.cc
++++ b/third_party/crashpad/crashpad/snapshot/linux/system_snapshot_linux.cc
+@@ -205,6 +205,8 @@ CPUArchitecture SystemSnapshotLinux::GetCPUArchitecture() const {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+   return process_reader_->Is64Bit() ? kCPUArchitectureMIPS64EL
+                                     : kCPUArchitectureMIPSEL;
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++  return kCPUArchitectureLOONG64;
+ #else
+ #error port to your architecture
+ #endif
+@@ -220,6 +222,8 @@ uint32_t SystemSnapshotLinux::CPURevision() const {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+   // Not implementable on MIPS
+   return 0;
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++  return 0;
+ #else
+ #error port to your architecture
+ #endif
+@@ -240,6 +244,8 @@ std::string SystemSnapshotLinux::CPUVendor() const {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+   // Not implementable on MIPS
+   return std::string();
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++  return std::string();
+ #else
+ #error port to your architecture
+ #endif
+@@ -373,6 +379,8 @@ bool SystemSnapshotLinux::NXEnabled() const {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+   // Not implementable on MIPS
+   return false;
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++  return false;
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
+index ba334010936..9a041cbbb62 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
++++ b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.cc
+@@ -190,6 +190,13 @@ bool ThreadSnapshotLinux::Initialize(
+         thread.thread_info.float_context.f32,
+         context_.mipsel);
+   }
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++  context_.architecture = kCPUArchitectureLOONG64;
++  context_.loong64 = &context_union_.loong64;
++  InitializeCPUContextLOONG64<ContextTraits64>(
++      thread.thread_info.thread_context.t64,
++      thread.thread_info.float_context.f64,
++      context_.loong64);
+ #else
+ #error Port.
+ #endif
+diff --git a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.h b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.h
+index bd03f58200c..acfc31ae76b 100644
+--- a/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.h
++++ b/third_party/crashpad/crashpad/snapshot/linux/thread_snapshot_linux.h
+@@ -74,6 +74,8 @@ class ThreadSnapshotLinux final : public ThreadSnapshot {
+ #elif defined(ARCH_CPU_MIPS_FAMILY)
+     CPUContextMIPS mipsel;
+     CPUContextMIPS64 mips64;
++#elif defined(ARCH_CPU_LOONG_FAMILY)
++    CPUContextLOONG64 loong64;
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY
+diff --git a/third_party/crashpad/crashpad/test/linux/get_tls.cc b/third_party/crashpad/crashpad/test/linux/get_tls.cc
+index c8147f0dfb2..4d37fd54b53 100644
+--- a/third_party/crashpad/crashpad/test/linux/get_tls.cc
++++ b/third_party/crashpad/crashpad/test/linux/get_tls.cc
+@@ -49,6 +49,9 @@ LinuxVMAddress GetTLS() {
+       : "=r"(tls)
+       :
+       : "$3");
++#elif defined(ARCH_CPU_LOONG64)
++  asm("move    %0,$tp\n\t"
++      : "=r"(tls) ::);
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_ARMEL
+diff --git a/third_party/crashpad/crashpad/util/linux/ptracer.cc b/third_party/crashpad/crashpad/util/linux/ptracer.cc
+index 25c89ea95c6..1ca2274ef06 100644
+--- a/third_party/crashpad/crashpad/util/linux/ptracer.cc
++++ b/third_party/crashpad/crashpad/util/linux/ptracer.cc
+@@ -273,7 +273,7 @@ bool GetThreadArea64(pid_t tid,
+   }
+   return true;
+ }
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+ // PTRACE_GETREGSET, introduced in Linux 2.6.34 (2225a122ae26), requires kernel
+ // support enabled by HAVE_ARCH_TRACEHOOK. This has been set for x86 (including
+ // x86_64) since Linux 2.6.28 (99bbc4b1e677a), but for MIPS only since
+@@ -296,7 +296,7 @@ bool GetGeneralPurposeRegistersLegacy(pid_t tid,
+ // ptrace unsupported on MIPS for kernels older than 3.13
+ #if defined(ARCH_CPU_MIPSEL)
+ #define THREAD_CONTEXT_FIELD t32
+-#elif defined(ARCH_CPU_MIPS64EL)
++#elif defined(ARCH_CPU_MIPS64EL) || defined(ARCH_CPU_LOONG64)
+ #define THREAD_CONTEXT_FIELD t64
+ #endif
+   for (size_t reg = 0; reg < 32; ++reg) {
+@@ -385,6 +385,10 @@ bool GetThreadArea64(pid_t tid,
+                      const ThreadContext& context,
+                      LinuxVMAddress* address,
+                      bool can_log) {
++#if defined(ARCH_CPU_LOONG64)
++  PLOG_IF(ERROR, can_log) << "GetThreadArea64 is not supported on loongarch64";
++  return false;
++#else
+   void* result;
+ #if defined(ARCH_CPU_MIPSEL)
+   if (ptrace(PTRACE_GET_THREAD_AREA_3264, tid, nullptr, &result) != 0) {
+@@ -396,6 +400,7 @@ bool GetThreadArea64(pid_t tid,
+   }
+   *address = FromPointerCast<LinuxVMAddress>(result);
+   return true;
++#endif  // ARCH_CPU_LOONG64
+ }
+ 
+ #else
+@@ -412,7 +417,7 @@ size_t GetGeneralPurposeRegistersAndLength(pid_t tid,
+           PTRACE_GETREGSET, tid, reinterpret_cast<void*>(NT_PRSTATUS), &iov) !=
+       0) {
+     switch (errno) {
+-#if defined(ARCH_CPU_ARMEL) || defined(ARCH_CPU_MIPS_FAMILY)
++#if defined(ARCH_CPU_ARMEL) || defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+       case EIO:
+         return GetGeneralPurposeRegistersLegacy(tid, context, can_log)
+                    ? sizeof(context->t32)
+diff --git a/third_party/crashpad/crashpad/util/linux/thread_info.h b/third_party/crashpad/crashpad/util/linux/thread_info.h
+index 9f60bd3ebe3..78344797adb 100644
+--- a/third_party/crashpad/crashpad/util/linux/thread_info.h
++++ b/third_party/crashpad/crashpad/util/linux/thread_info.h
+@@ -68,7 +68,7 @@ union ThreadContext {
+     uint32_t pc;
+     uint32_t cpsr;
+     uint32_t orig_r0;
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+     // Reflects output format of static int gpr32_get(), defined in
+     // arch/mips/kernel/ptrace.c in kernel source
+     uint32_t padding0_[6];
+@@ -123,7 +123,7 @@ union ThreadContext {
+     uint64_t sp;
+     uint64_t pc;
+     uint64_t pstate;
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+     // Reflects output format of static int gpr64_get(), defined in
+     // arch/mips/kernel/ptrace.c in kernel source
+     uint64_t regs[32];
+@@ -142,13 +142,13 @@ union ThreadContext {
+   using NativeThreadContext = user_regs_struct;
+ #elif defined(ARCH_CPU_ARMEL)
+   using NativeThreadContext = user_regs;
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+ // No appropriate NativeThreadsContext type available for MIPS
+ #else
+ #error Port.
+ #endif  // ARCH_CPU_X86_FAMILY || ARCH_CPU_ARM64
+ 
+-#if !defined(ARCH_CPU_MIPS_FAMILY)
++#if !defined(ARCH_CPU_MIPS_FAMILY) && !defined(ARCH_CPU_LOONG_FAMILY)
+ #if defined(ARCH_CPU_32_BITS)
+   static_assert(sizeof(t32_t) == sizeof(NativeThreadContext), "Size mismatch");
+ #else  // ARCH_CPU_64_BITS
+@@ -210,7 +210,7 @@ union FloatContext {
+ 
+     bool have_fpregs;
+     bool have_vfp;
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+     // Reflects data format filled by ptrace_getfpregs() in
+     // arch/mips/kernel/ptrace.c
+     struct {
+@@ -247,7 +247,7 @@ union FloatContext {
+     uint32_t fpsr;
+     uint32_t fpcr;
+     uint8_t padding[8];
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+     // Reflects data format filled by ptrace_getfpregs() in
+     // arch/mips/kernel/ptrace.c
+     double fpregs[32];
+@@ -280,7 +280,7 @@ union FloatContext {
+ #endif
+ #elif defined(ARCH_CPU_ARM64)
+   static_assert(sizeof(f64) == sizeof(user_fpsimd_struct), "Size mismatch");
+-#elif defined(ARCH_CPU_MIPS_FAMILY)
++#elif defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONG_FAMILY)
+ // No appropriate floating point context native type for available MIPS.
+ #else
+ #error Port.
+diff --git a/third_party/crashpad/crashpad/util/net/http_transport_libcurl.cc b/third_party/crashpad/crashpad/util/net/http_transport_libcurl.cc
+index d5c9177f952..c9ba39d9bb2 100644
+--- a/third_party/crashpad/crashpad/util/net/http_transport_libcurl.cc
++++ b/third_party/crashpad/crashpad/util/net/http_transport_libcurl.cc
+@@ -237,6 +237,8 @@ std::string UserAgent() {
+ #elif defined(ARCH_CPU_BIG_ENDIAN)
+     static constexpr char arch[] = "aarch64_be";
+ #endif
++#elif defined(ARCH_CPU_LOONG64)
++    static constexpr char arch[] = "loongarch64";
+ #else
+ #error Port
+ #endif
+diff --git a/third_party/ffmpeg/BUILD.gn b/third_party/ffmpeg/BUILD.gn
+index 91e2f508c38..72d51dd9f65 100644
+--- a/third_party/ffmpeg/BUILD.gn
++++ b/third_party/ffmpeg/BUILD.gn
+@@ -313,6 +313,10 @@ target(link_target_type, "ffmpeg_internal") {
+         asmflags += [ "-DHAVE_VFP_ARGS=0" ]
+       }
+     }
++
++    if (current_cpu == "loong64") {
++      cflags += [ "-mlasx", "-mlsx", ]
++    }
+   }
+ 
+   if (is_fuchsia || (is_posix && !is_mac)) {
+diff --git a/third_party/ffmpeg/chromium/scripts/build_ffmpeg.py b/third_party/ffmpeg/chromium/scripts/build_ffmpeg.py
+index 19d0a0f7bc1..fa8f307602c 100755
+--- a/third_party/ffmpeg/chromium/scripts/build_ffmpeg.py
++++ b/third_party/ffmpeg/chromium/scripts/build_ffmpeg.py
+@@ -40,7 +40,8 @@ BRANDINGS = [
+ ARCH_MAP = {
+     'android': ['ia32', 'x64', 'arm-neon', 'arm64'],
+     'linux': [
+-        'ia32', 'x64', 'noasm-x64', 'arm', 'arm-neon', 'arm64'
++        #'ia32', 'x64', 'noasm-x64', 'arm', 'arm-neon', 'arm64'
++        'x64', 'loong64'
+     ],
+     'mac': ['x64', 'arm64'],
+     'win': ['ia32', 'x64', 'arm64'],
+@@ -63,12 +64,13 @@ Platform specific build notes:
+   linux ia32/x64:
+     Script can run on a normal Ubuntu box.
+ 
+-  linux arm/arm-neon/arm64/mipsel/mips64el:
++  linux arm/arm-neon/arm64/mipsel/mips64el/loong64:
+     Script can run on a normal Ubuntu with ARM/ARM64 or MIPS32/MIPS64 ready Chromium checkout:
+       build/linux/sysroot_scripts/install-sysroot.py --arch=arm
+       build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
+       build/linux/sysroot_scripts/install-sysroot.py --arch=mips
+       build/linux/sysroot_scripts/install-sysroot.py --arch=mips64el
++      build/linux/sysroot_scripts/install-sysroot.py --arch=loong64
+ 
+   mac:
+     Script must be run on Linux or macOS.  Additionally, ensure the Chromium
+@@ -136,6 +138,8 @@ def DetermineHostOsAndArch():
+     host_arch = 'x64'
+   elif platform.machine() == 'aarch64':
+     host_arch = 'arm64'
++  elif platform.machine() == 'loongarch64':
++    host_arch = 'loong64'
+   elif platform.machine() == 'mips32':
+     host_arch = 'mipsel'
+   elif platform.machine() == 'mips64':
+@@ -911,6 +915,20 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch, parallel_jobs,
+             '--extra-cflags=--target=mips64el-linux-gnuabi64',
+             '--extra-ldflags=--target=mips64el-linux-gnuabi64',
+         ])
++    elif target_arch == 'loong64':
++      if target_os == 'linux':
++        configure_flags['Common'].extend([
++            '--enable-cross-compile',
++            '--arch=loongarch64',
++            '--target-os=linux',
++            '--cc=/opt/llvm_chromium/llvm_install_15.0.7/bin/clang',
++            '--cxx=/opt/llvm_chromium/llvm_install_15.0.7/bin/clang++',
++            '--ld=/opt/llvm_chromium/llvm_install_15.0.7/bin/clang',
++            '--sysroot=' + os.path.join(CHROMIUM_ROOT_DIR,
++                CHROMIUM_ROOT_DIR, 'build/linux/debian_bullseye_loong64-sysroot'),
++            '--extra-cflags=--target=loongarch64-linux-gnu ',
++            '--extra-ldflags=--target=loongarch64-linux-gnu ',
++        ])
+     else:
+       print(
+           'Error: Unknown target arch %r for target OS %r!' % (target_arch,
+@@ -925,12 +943,15 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch, parallel_jobs,
+     ])
+ 
+   if 'win' not in target_os and 'android' not in target_os:
+-    configure_flags['Common'].extend([
+-        '--enable-pic',
+-        '--cc=clang',
+-        '--cxx=clang++',
+-        '--ld=clang',
+-    ])
++    if target_arch != 'loong64':
++      configure_flags['Common'].extend([
++          '--enable-pic',
++          '--cc=clang',
++          '--cxx=clang++',
++          '--ld=clang',
++      ])
++    else:
++      configure_flags['Common'].extend(['--enable-pic'])
+ 
+     # Clang Linux will use the first 'ld' it finds on the path, which will
+     # typically be the system one, so explicitly configure use of Clang's
+diff --git a/third_party/ffmpeg/chromium/scripts/copy_config.sh b/third_party/ffmpeg/chromium/scripts/copy_config.sh
+index a18048cf040..d8164515208 100755
+--- a/third_party/ffmpeg/chromium/scripts/copy_config.sh
++++ b/third_party/ffmpeg/chromium/scripts/copy_config.sh
+@@ -10,7 +10,7 @@ for os in android linux linux-noasm mac win; do
+     # Copy config files for various architectures:
+     #   - ia32/x64 have config.asm, config.h
+     #   - arm/arm-neon have config.h
+-    for arch in arm arm-neon arm64 ia32 x64 mipsel mips64el; do
++    for arch in arm arm-neon arm64 ia32 x64 mipsel mips64el loong64; do
+       # Don't waste time on non-existent configs, if no config.h then skip.
+       [ ! -e "build.$arch.$os/$target/config.h" ] && continue
+       for f in config.h config_components.h config.asm libavutil/avconfig.h libavutil/ffversion.h libavcodec/bsf_list.c libavcodec/codec_list.c libavcodec/parser_list.c libavformat/demuxer_list.c libavformat/muxer_list.c libavformat/protocol_list.c; do
+diff --git a/third_party/ffmpeg/chromium/scripts/generate_gn.py b/third_party/ffmpeg/chromium/scripts/generate_gn.py
+index d36b0a22c3c..3ba01794468 100755
+--- a/third_party/ffmpeg/chromium/scripts/generate_gn.py
++++ b/third_party/ffmpeg/chromium/scripts/generate_gn.py
+@@ -78,7 +78,7 @@ _Attrs = ('ARCHITECTURE', 'TARGET', 'PLATFORM')
+ Attr = collections.namedtuple('Attr', _Attrs)(*_Attrs)
+ SUPPORT_MATRIX = {
+     Attr.ARCHITECTURE:
+-        set(['ia32', 'x64', 'arm', 'arm64', 'arm-neon']),
++        set(['ia32', 'x64', 'arm', 'arm64', 'arm-neon', 'loong64']),
+     Attr.TARGET:
+         set(['Chromium', 'Chrome', 'ChromeOS']),
+     Attr.PLATFORM:
+diff --git a/third_party/libvpx/source/config/linux/loongarch/vpx_dsp_rtcd.h b/third_party/libvpx/source/config/linux/loongarch/vpx_dsp_rtcd.h
+index f4740a1ddb2..da0c903001d 100644
+--- a/third_party/libvpx/source/config/linux/loongarch/vpx_dsp_rtcd.h
++++ b/third_party/libvpx/source/config/linux/loongarch/vpx_dsp_rtcd.h
+@@ -1133,12 +1133,17 @@ void vpx_quantize_b_32x32_c(const tran_low_t* coeff_ptr,
+                             uint16_t* eob_ptr,
+                             const struct ScanOrder* const scan_order);
+ void vpx_quantize_b_32x32_lsx(const tran_low_t* coeff_ptr,
+-                              const struct macroblock_plane* const mb_plane,
++                              intptr_t n_coeffs,
++                              const int16_t* zbin_ptr,
++                              const int16_t* round_ptr,
++                              const int16_t* quant_ptr,
++                              const int16_t* quant_shift_ptr,
+                               tran_low_t* qcoeff_ptr,
+                               tran_low_t* dqcoeff_ptr,
+                               const int16_t* dequant_ptr,
+                               uint16_t* eob_ptr,
+-                              const struct ScanOrder* const scan_order);
++                              const int16_t* scan,
++                              const int16_t* iscan);
+ RTCD_EXTERN void (*vpx_quantize_b_32x32)(
+     const tran_low_t* coeff_ptr,
+     const struct macroblock_plane* const mb_plane,
+diff --git a/third_party/lss/linux_syscall_support.h b/third_party/lss/linux_syscall_support.h
+index 99a4b444918..b220acf8f0f 100644
+--- a/third_party/lss/linux_syscall_support.h
++++ b/third_party/lss/linux_syscall_support.h
+@@ -89,7 +89,7 @@
+ #if (defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__) ||   \
+      defined(__mips__) || defined(__PPC__) || defined(__ARM_EABI__) || \
+      defined(__aarch64__) || defined(__s390__) || defined(__e2k__) ||  \
+-     (defined(__riscv) && __riscv_xlen == 64) || defined(__loongarch_lp64))  \
++     (defined(__riscv) && __riscv_xlen == 64) || defined(__loongarch64))  \
+   && (defined(__linux) || defined(__ANDROID__))
+ 
+ #ifndef SYS_CPLUSPLUS
+@@ -309,7 +309,7 @@ struct kernel_old_sigaction {
+ } __attribute__((packed,aligned(4)));
+ #elif (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI32)
+   #define kernel_old_sigaction kernel_sigaction
+-#elif defined(__aarch64__) || defined(__riscv) || defined(__loongarch_lp64)
++#elif defined(__aarch64__) || defined(__riscv) || defined(__loongarch64)
+   // No kernel_old_sigaction defined for arm64 riscv and loongarch64.
+ #endif
+ 
+@@ -322,7 +322,8 @@ struct kernel_old_sigaction {
+  * actual number of signals is obviously the same, but the constants
+  * differ by one.
+  */
+-#ifdef __mips__
++// old world for loongarch.
++#if defined(__mips__) || defined(__loongarch64)
+ #define KERNEL_NSIG 128
+ #else
+ #define KERNEL_NSIG  64
+@@ -349,7 +350,7 @@ struct kernel_sigaction {
+     void             (*sa_sigaction_)(int, siginfo_t *, void *);
+   };
+   unsigned long      sa_flags;
+-#if !defined(__riscv) && !defined(__loongarch_lp64)
++#if !defined(__riscv)
+   void               (*sa_restorer)(void);
+ #endif
+   struct kernel_sigset_t sa_mask;
+@@ -601,7 +602,7 @@ struct kernel_stat {
+   kernel_blkcnt_t    st_blocks;
+   int                st_pad4[14];
+ };
+-#elif defined(__aarch64__) || defined(__riscv) || defined(__loongarch_lp64)
++#elif defined(__aarch64__) || defined(__riscv) || defined(__loongarch64)
+ typedef long kernel_blkcnt_t;
+ typedef int kernel_blksize_t;
+ typedef unsigned long kernel_dev_t;
+@@ -747,7 +748,8 @@ struct kernel_statfs64 {
+   unsigned long      f_spare[6];
+ };
+ #endif
+-#elif defined(__s390__)
++// old world for loongarch.
++#elif defined(__s390__) || defined(__loongarch64)
+ /* See also arch/s390/include/asm/compat.h                                   */
+ struct kernel_statfs64 {
+   unsigned int       f_type;
+@@ -811,7 +813,8 @@ struct kernel_statfs {
+   uint64_t           f_frsize;
+   uint64_t           f_spare[5];
+ };
+-#elif defined(__s390__)
++// old world for loongarch.
++#elif defined(__s390__) || defined(__loongarch64)
+ struct kernel_statfs {
+   unsigned int       f_type;
+   unsigned int       f_bsize;
+@@ -1252,7 +1255,7 @@ struct kernel_statx {
+ #define __NR_getrandom          (__NR_SYSCALL_BASE + 384)
+ #endif
+ /* End of ARM 3/EABI definitions                                             */
+-#elif defined(__aarch64__) || defined(__riscv) || defined(__loongarch_lp64)
++#elif defined(__aarch64__) || defined(__riscv) || defined(__loongarch64)
+ #ifndef __NR_setxattr
+ #define __NR_setxattr             5
+ #endif
+@@ -1308,11 +1311,9 @@ struct kernel_statx {
+ #ifndef __NR_readlinkat
+ #define __NR_readlinkat          78
+ #endif
+-#if !defined(__loongarch_lp64)
+ #ifndef __NR_newfstatat
+ #define __NR_newfstatat          79
+ #endif
+-#endif
+ #ifndef __NR_set_tid_address
+ #define __NR_set_tid_address     96
+ #endif
+@@ -2072,7 +2073,7 @@ struct kernel_statx {
+   #undef  LSS_RETURN
+   #if defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__) \
+        || defined(__ARM_EABI__) || defined(__aarch64__) || defined(__s390__) \
+-       || defined(__e2k__) || defined(__riscv) || defined(__loongarch_lp64)
++       || defined(__e2k__) || defined(__riscv) || defined(__loongarch64)
+   /* Failing system calls return a negative result in the range of
+    * -1..-4095. These are "errno" values with the sign inverted.
+    */
+@@ -3025,6 +3026,135 @@ struct kernel_statx {
+       }
+       LSS_RETURN(int, __res);
+     }
++  #elif defined(__loongarch64)
++    // old world for loongarch.
++    /* Most definitions of _syscallX() neglect to mark "memory" as being
++     * clobbered. This causes problems with compilers, that do a better job
++     * at optimizing across __asm__ calls.
++     * So, we just have to redefine all of the _syscallX() macros.
++     */
++    #undef LSS_REG
++    #define LSS_REG(ar,a) register int64_t __a##ar __asm__("a"#ar) = (int64_t)a
++    // TODO(loonngson): Recheck LSS_SYSCALL_CLOBBERS for loongarch64
++    /* syscall is like subroutine calls, all caller-saved registers may be
++     * clobbered, we should add them to the |Clobbers| list.
++     * a0 is not included because it's in the output list.
++     */
++    #define LSS_SYSCALL_CLOBBERS "a1", "a2", "a3", "a4", "a5", "a6", "a7",    \
++                                 "t0", "t1", "t2", "t3", "t4", "t5", "t6",    \
++                                 "t7", "t8", "memory"
++    #undef  LSS_BODY
++    #define LSS_BODY(type,name,args...)                                       \
++          register int64_t __res_a0 __asm__("a0");                            \
++          int64_t __res;                                                      \
++          __asm__ __volatile__ ("li.w $a7, %1\n"                                \
++                                "syscall 0x0\n"                               \
++                                : "=r"(__res_a0)                              \
++                                : "i"(__NR_##name) , ## args                  \
++                                : LSS_SYSCALL_CLOBBERS);                      \
++          __res = __res_a0;                                                   \
++	  LSS_RETURN(type, __res)
++    #undef _syscall0
++    #define _syscall0(type, name)                                             \
++      type LSS_NAME(name)(void) {                                             \
++        LSS_BODY(type, name);                                                 \
++      }
++    #undef _syscall1
++    #define _syscall1(type, name, type1, arg1)                                \
++      type LSS_NAME(name)(type1 arg1) {                                       \
++        LSS_REG(0, arg1); LSS_BODY(type, name, "r"(__a0));                    \
++      }
++    #undef _syscall2
++    #define _syscall2(type, name, type1, arg1, type2, arg2)                   \
++      type LSS_NAME(name)(type1 arg1, type2 arg2) {                           \
++        LSS_REG(0, arg1); LSS_REG(1, arg2);                                   \
++        LSS_BODY(type, name, "r"(__a0), "r"(__a1));                           \
++      }
++    #undef _syscall3
++    #define _syscall3(type, name, type1, arg1, type2, arg2, type3, arg3)      \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3) {               \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_BODY(type, name, "r"(__a0), "r"(__a1), "r"(__a2));                \
++      }
++    #undef _syscall4
++    #define _syscall4(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4)  \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4) {   \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_REG(3, arg4);                                                     \
++        LSS_BODY(type, name, "r"(__a0), "r"(__a1), "r"(__a2), "r"(__a3));     \
++      }
++    #undef _syscall5
++    #define _syscall5(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
++                      type5,arg5)                                             \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
++                          type5 arg5) {                                       \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_REG(3, arg4); LSS_REG(4, arg5);                                   \
++        LSS_BODY(type, name, "r"(__a0), "r"(__a1), "r"(__a2), "r"(__a3),      \
++                             "r"(__a4));                                      \
++      }
++    #undef _syscall6
++    #define _syscall6(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
++                      type5,arg5,type6,arg6)                                  \
++      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
++                          type5 arg5, type6 arg6) {                           \
++        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
++        LSS_REG(3, arg4); LSS_REG(4, arg5); LSS_REG(5, arg6);                 \
++        LSS_BODY(type, name, "r"(__a0), "r"(__a1), "r"(__a2), "r"(__a3),      \
++                             "r"(__a4), "r"(__a5));                           \
++      }
++
++    LSS_INLINE int LSS_NAME(clone)(int (*fn)(void *), void *child_stack,
++                                   int flags, void *arg, int *parent_tidptr,
++                                   void *newtls, int *child_tidptr) {
++      int64_t __res;
++      {
++        register uint64_t __flags __asm__("a0") = flags;
++        register void *__stack __asm__("a1") = child_stack;
++        register void *__ptid  __asm__("a2") = parent_tidptr;
++        register void *__tls   __asm__("a3") = newtls;
++        register int  *__ctid  __asm__("a4") = child_tidptr;
++        __asm__ __volatile__(/* Push "arg" and "fn" onto the stack that will be
++                              * used by the child.
++                              */
++                             "addi.d  %2, %2, -16\n"
++                             "st.d    %1, %2, 8\n"
++                             "st.d    %4, %2, 0\n"
++
++                             /* %a0 = syscall(%a0 = flags,
++                              *               %a1 = child_stack,
++                              *               %a2 = parent_tidptr,
++                              *               %a3 = newtls,
++                              *               %a4 = child_tidptr)
++                              */
++                             "li.w      $a7, %8\n"
++                             "syscall    0x0\n"
++
++                             /* if (%a0 != 0)
++                              *   return %a0;
++                              */
++                             "bnez    $a0, 1f\n"
++
++                             /* In the child, now. Call "fn(arg)".
++                              */
++                             "ld.d    $a0, $sp, 0\n"
++                             "ld.d    $a1, $sp, 8\n"
++                             "addi.d  $sp, $sp, 16\n"
++                             "jirl    $ra, $a1, 0\n"
++
++                             /* Call _exit(%a0).
++			      */
++                             "li.w     $a7, %9\n"
++                             "syscall    0x0\n"
++                           "1:\n"
++                             : "=r" (__res)
++                             : "r"(fn), "r"(__stack), "r"(__flags), "r"(arg),
++                               "r"(__ptid), "r"(__tls), "r"(__ctid),
++                               "i"(__NR_clone), "i"(__NR_exit)
++                             : LSS_SYSCALL_CLOBBERS);
++      }
++      LSS_RETURN(int, __res);
++    }
+   #elif defined(__mips__)
+     #undef LSS_REG
+     #define LSS_REG(r,a) register unsigned long __r##r __asm__("$"#r) =       \
+@@ -3933,134 +4063,6 @@ struct kernel_statx {
+                               "b[4]", "b[5]", "pred0");
+       LSS_RETURN(int, __res);
+     }
+-  #elif defined(__loongarch_lp64)
+-    /* Most definitions of _syscallX() neglect to mark "memory" as being
+-     * clobbered. This causes problems with compilers, that do a better job
+-     * at optimizing across __asm__ calls.
+-     * So, we just have to redefine all of the _syscallX() macros.
+-     */
+-    #undef LSS_REG
+-    #define LSS_REG(ar,a) register int64_t __r##ar __asm__("a"#ar) = (int64_t)a
+-    /* syscall is like subroutine calls, all caller-saved registers may be
+-     * clobbered, we should add them to the |Clobbers| list.
+-     * a0 is not included because it's in the output list.
+-     */
+-    #define LSS_SYSCALL_CLOBBERS "t0", "t1", "t2", "t3", "t4", "t5", "t6",    \
+-                                 "t7", "t8", "memory"
+-    #undef  LSS_BODY
+-    #define LSS_BODY(type,name,args...)                                       \
+-          register int64_t __res_a0 __asm__("a0");                            \
+-          int64_t __res;                                                      \
+-          __asm__ __volatile__ ("li.d $a7, %1\n"                              \
+-                                "syscall 0x0\n"                               \
+-                                : "=r"(__res_a0)                              \
+-                                : "i"(__NR_##name) , ## args                  \
+-                                : LSS_SYSCALL_CLOBBERS);                      \
+-          __res = __res_a0;                                                   \
+-          LSS_RETURN(type, __res)
+-    #undef _syscall0
+-    #define _syscall0(type, name)                                             \
+-      type LSS_NAME(name)(void) {                                             \
+-        LSS_BODY(type, name);                                                 \
+-      }
+-    #undef _syscall1
+-    #define _syscall1(type, name, type1, arg1)                                \
+-      type LSS_NAME(name)(type1 arg1) {                                       \
+-        LSS_REG(0, arg1); LSS_BODY(type, name, "r"(__r0));                    \
+-      }
+-    #undef _syscall2
+-    #define _syscall2(type, name, type1, arg1, type2, arg2)                   \
+-      type LSS_NAME(name)(type1 arg1, type2 arg2) {                           \
+-        LSS_REG(0, arg1); LSS_REG(1, arg2);                                   \
+-        LSS_BODY(type, name, "r"(__r0), "r"(__r1));                           \
+-      }
+-    #undef _syscall3
+-    #define _syscall3(type, name, type1, arg1, type2, arg2, type3, arg3)      \
+-      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3) {               \
+-        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+-        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2));                \
+-      }
+-    #undef _syscall4
+-    #define _syscall4(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4)  \
+-      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4) {   \
+-        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+-        LSS_REG(3, arg4);                                                     \
+-        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3));     \
+-      }
+-    #undef _syscall5
+-    #define _syscall5(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
+-                      type5,arg5)                                             \
+-      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
+-                          type5 arg5) {                                       \
+-        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+-        LSS_REG(3, arg4); LSS_REG(4, arg5);                                   \
+-        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),      \
+-                             "r"(__r4));                                      \
+-      }
+-    #undef _syscall6
+-    #define _syscall6(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
+-                      type5,arg5,type6,arg6)                                  \
+-      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
+-                          type5 arg5, type6 arg6) {                           \
+-        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+-        LSS_REG(3, arg4); LSS_REG(4, arg5); LSS_REG(5, arg6);                 \
+-        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),      \
+-                             "r"(__r4), "r"(__r5));                           \
+-      }
+-
+-    LSS_INLINE int LSS_NAME(clone)(int (*fn)(void *), void *child_stack,
+-                                   int flags, void *arg, int *parent_tidptr,
+-                                   void *newtls, int *child_tidptr) {
+-      int64_t __res;
+-      {
+-        register int64_t __res_a0 __asm__("a0");
+-        register uint64_t __flags __asm__("a0") = flags;
+-        register void *__stack __asm__("a1") = child_stack;
+-        register void *__ptid  __asm__("a2") = parent_tidptr;
+-        register void *__tls   __asm__("a3") = newtls;
+-        register int  *__ctid  __asm__("a4") = child_tidptr;
+-        __asm__ __volatile__(/* Push "arg" and "fn" onto the stack that will be
+-                              * used by the child.
+-                              */
+-                             "addi.d  %2, %2, -16\n"
+-                             "st.d    %1, %2, 8\n"
+-                             "st.d    %4, %2, 0\n"
+-
+-                             /* %a0 = syscall(%a0 = flags,
+-                              *               %a1 = child_stack,
+-                              *               %a2 = parent_tidptr,
+-                              *               %a3 = newtls,
+-                              *               %a4 = child_tidptr)
+-                              */
+-                             "li.d      $a7, %8\n"
+-                             "syscall   0x0\n"
+-
+-                             /* if (%a0 != 0)
+-                              *   return %a0;
+-                              */
+-                             "bnez    $a0, 1f\n"
+-
+-                             /* In the child, now. Call "fn(arg)".
+-                              */
+-                             "ld.d    $a0, $sp, 0\n"
+-                             "ld.d    $a1, $sp, 8\n"
+-                             "addi.d  $sp, $sp, 16\n"
+-                             "jirl    $ra, $a1, 0\n"
+-
+-                             /* Call _exit(%a0).
+-                              */
+-                             "li.d     $a7, %9\n"
+-                             "syscall  0x0\n"
+-                           "1:\n"
+-                             : "=r" (__res_a0)
+-                             : "r"(fn), "r"(__stack), "r"(__flags), "r"(arg),
+-                               "r"(__ptid), "r"(__tls), "r"(__ctid),
+-                               "i"(__NR_clone), "i"(__NR_exit)
+-                             : LSS_SYSCALL_CLOBBERS);
+-      __res = __res_a0;
+-      }
+-      LSS_RETURN(int, __res);
+-    }
+ 
+   #endif
+   #define __NR__exit   __NR_exit
+@@ -5279,7 +5281,7 @@ struct kernel_statx {
+ // TODO: define this in an arch-independant way instead of inlining the clone
+ //       syscall body.
+ 
+-# if defined(__aarch64__) || defined(__riscv) || defined(__loongarch_lp64)
++# if defined(__aarch64__) || defined(__riscv)
+   LSS_INLINE pid_t LSS_NAME(fork)(void) {
+     // No fork syscall on aarch64 - implement by means of the clone syscall.
+     // Note that this does not reset glibc's cached view of the PID/TID, so
+@@ -5298,6 +5300,26 @@ struct kernel_statx {
+     LSS_BODY(pid_t, clone, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),
+              "r"(__r4));
+   }
++# elif defined(__loongarch64)
++  // old world for loongarch.
++  LSS_INLINE pid_t LSS_NAME(fork)(void) {
++    // No fork syscall on aarch64 - implement by means of the clone syscall.
++    // Note that this does not reset glibc's cached view of the PID/TID, so
++    // some glibc interfaces might go wrong in the forked subprocess.
++    int flags = SIGCHLD;
++    void *child_stack = NULL;
++    void *parent_tidptr = NULL;
++    void *newtls = NULL;
++    void *child_tidptr = NULL;
++
++    LSS_REG(0, flags);
++    LSS_REG(1, child_stack);
++    LSS_REG(2, parent_tidptr);
++    LSS_REG(3, newtls);
++    LSS_REG(4, child_tidptr);
++    LSS_BODY(pid_t, clone, "r"(__a0), "r"(__a1), "r"(__a2), "r"(__a3),
++             "r"(__a4));
++  }
+ # elif defined(__x86_64__)
+   LSS_INLINE pid_t LSS_NAME(fork)(void) {
+     // Android disallows the fork syscall on x86_64 - implement by means of the
+diff --git a/third_party/protobuf/src/google/protobuf/port_def.inc b/third_party/protobuf/src/google/protobuf/port_def.inc
+index 8cc16a6ecef..24ad0b6b97c 100644
+--- a/third_party/protobuf/src/google/protobuf/port_def.inc
++++ b/third_party/protobuf/src/google/protobuf/port_def.inc
+@@ -235,7 +235,7 @@
+ #endif
+ #if __has_cpp_attribute(clang::musttail) && !defined(__arm__) && \
+     !defined(_ARCH_PPC) && !defined(__wasm__) &&                 \
+-    !(defined(_MSC_VER) && defined(_M_IX86))
++    !(defined(_MSC_VER) && defined(_M_IX86)) && !defined(__loongarch__)
+ #  ifndef PROTO2_OPENSOURCE
+ // Compilation fails on ARM32: b/195943306
+ // Compilation fails on powerpc64le: b/187985113
+diff --git a/third_party/skia/BUILD.gn b/third_party/skia/BUILD.gn
+index b38acccc29b..322f70f19eb 100644
+--- a/third_party/skia/BUILD.gn
++++ b/third_party/skia/BUILD.gn
+@@ -1545,6 +1545,7 @@ skia_component("skia") {
+ 
+   defines = []
+   libs = []
++  deps += [ "//base:npapi_buildflags" ]
+ 
+   if (skia_enable_sksl) {
+     deps += [ ":minify_sksl" ]
+diff --git a/third_party/skia/src/core/SkRasterPipeline.h b/third_party/skia/src/core/SkRasterPipeline.h
+index 766bb0c11dc..24a9f809a57 100644
+--- a/third_party/skia/src/core/SkRasterPipeline.h
++++ b/third_party/skia/src/core/SkRasterPipeline.h
+@@ -24,7 +24,7 @@ enum SkColorType : int;
+ struct SkImageInfo;
+ struct skcms_TransferFunction;
+ 
+-#if __has_cpp_attribute(clang::musttail) && !defined(__EMSCRIPTEN__) && !defined(SK_CPU_ARM32)
++#if __has_cpp_attribute(clang::musttail) && !defined(__EMSCRIPTEN__) && !defined(SK_CPU_ARM32) && !defined(__loongarch__)
+     #define SK_HAS_MUSTTAIL 1
+ #else
+     #define SK_HAS_MUSTTAIL 0
+diff --git a/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn b/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn
+index 59e52303c5c..313fcd1831d 100644
+--- a/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn
++++ b/third_party/swiftshader/third_party/llvm-10.0/BUILD.gn
+@@ -158,6 +158,8 @@ swiftshader_llvm_source_set("swiftshader_llvm") {
+     deps += [ ":swiftshader_llvm_riscv64" ]
+   } else if (current_cpu == "x86" || current_cpu == "x64") {
+     deps += [ ":swiftshader_llvm_x86" ]
++  } else if (current_cpu == "loong64") {
++    # TODO: Add support.
+   } else {
+     assert(false, "Unsupported current_cpu")
+   }
+diff --git a/ui/gfx/linux/drm_util_linux.cc b/ui/gfx/linux/drm_util_linux.cc
+index 7abc662baeb..d05edb4397d 100644
+--- a/ui/gfx/linux/drm_util_linux.cc
++++ b/ui/gfx/linux/drm_util_linux.cc
+@@ -8,6 +8,13 @@
+ 
+ #include "base/notreached.h"
+ 
++#if defined(__loongarch64)
++// libdrm-dev
++#ifndef DRM_FORMAT_P010
++#define DRM_FORMAT_P010 fourcc_code('P', '0', '1', '0')
++#endif
++#endif
++
+ namespace ui {
+ 
+ int GetFourCCFormatFromBufferFormat(gfx::BufferFormat format) {
+-- 
+2.25.1
+
