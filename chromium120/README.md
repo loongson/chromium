@@ -101,7 +101,7 @@ $ patch -Np1 -i 0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch
 
 ```shell
 $ cd third_party/ffmpeg
-$ ./chromium/scripts/build_ffmpeg.py linux
+$ ./chromium/scripts/build_ffmpeg.py linux --branding=Chrome
 $ ./chromium/scripts/copy_config.sh
 $ ./chromium/scripts/generate_gn.py
 $ cd -  （返回至src目录）

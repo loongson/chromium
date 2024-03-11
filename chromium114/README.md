@@ -18,8 +18,11 @@
     ├── debian_bullseye_loong64-sysroot.tar.bz2
 
 ├── chromium114
+│   ├── 0001-Add-chromium-114-loongarch64-all-in-one-patch-v1.2.patch (包含指令集加速)
 │   ├── old-world
 │   │   └── 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
+│   │   └── build
+│   │        └── cross-build.sh
 
 ├── cross-toolchain
 │   ├── llvm_install_15.0.7.tar.bz2
@@ -51,7 +54,8 @@ $ patch -Np1 -i 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
 
 **注意：** 
 > 1, old-world目录直接提供build/cross-build.sh脚本，由于适配patch中的该文件是diff文件。  
-  2, 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（browser@loongson.cn）。
+  2, 基于同一套代码，如果您有同时构建兼容新、旧世界的需求，请打入`0001-Add-chromium-114-loongarch64-all-in-one-patch-v1.2.patch`，默认走的是旧世界分支； 设置`loongarch_is_legacy = false`，能够启用新世界分支。除此之外，还加入指令集加速的优化，以使您的chromium在loongarch平台运行的更流畅。  
+  3, 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（browser@loongson.cn）。
 
 完成上述操作后，我们还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：
 
@@ -115,7 +119,7 @@ $ patch -Np1 -i 0001-CH114-new-world-Add-llvm-cross-build-support-for-loo.patch
 
 ```shell
 $ cd third_party/ffmpeg
-$ ./chromium/scripts/build_ffmpeg.py linux
+$ ./chromium/scripts/build_ffmpeg.py linux --branding=Chrome
 $ ./chromium/scripts/copy_config.sh
 $ ./chromium/scripts/generate_gn.py
 $ cd -  （返回至src目录）
