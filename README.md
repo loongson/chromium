@@ -92,7 +92,7 @@ $ gclient sync
 
 ## 三、构建配置
 
-`cross-toolchain`目录和`sysroot`目录分别存放着chromium loongarch64交叉构建所需的交叉编译工具链和sysroot。`chromiumXXX`目录存放着对应版本新旧世界构建适配patch及构建配置说明。
+`chromiumXXX`目录存放着对应版本新旧世界构建适配patch及构建配置说明。
 
 **注意：** 新旧世界在abi层面存在区别，3a5000/3a6000处理器都支持，但只能是其中一种。可以使用下面简单的方式判别您所使用的类型：
 ```shell
