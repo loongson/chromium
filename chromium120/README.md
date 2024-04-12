@@ -13,17 +13,10 @@
 
 主要是先获取构建所需的文件：
 
-```
-└── sysroot
-    ├── debian_bullseye_loong64-sysroot.tar.bz2
+* `sysroot (debian_bullseye_loong64-sysroot.tar.bz2): `  点击[下载](http://ftp.loongnix.cn/browser/build/sysroot/debian_bullseye_loong64-sysroot.tar.bz2)
+* `cross-toolchain (llvm_install_15.0.7.tar.bz2): `  点击[下载](http://ftp.loongnix.cn/browser/build/toolchain/llvm_install_15.0.7.tar.bz2)
+* `适配patch (0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch): `  点击[下载](./old-world/0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch)
 
-├── cross-toolchain
-│   ├── llvm_install_15.0.7.tar.bz2
-
-├── chromium120
-│   ├── old-world
-│   │   └── 0001-CH120-old-world-Add-llvm-cross-build-support-for-loo.patch
-```
 
 然后基于已获取chromium源码的`src`目录进行如下操作：
 
@@ -71,14 +64,10 @@ $ cd -  （返回至src目录）
 
 主要是先获取构建所需的文件：
 
-```
-└── sysroot
-    ├── debian_bullseye_loongarch64-sysroot.tar.bz2
+* `sysroot (debian_bullseye_loongarch64-sysroot.tar.bz2): `  点击[下载](http://ftp.loongnix.cn/browser/build/sysroot/debian_bullseye_loongarch64-sysroot.tar.bz2)
+* `cross-toolchain (Release+Asserts.tar.bz2): `  点击[下载](http://ftp.loongnix.cn/browser/build/toolchain/Release+Asserts.tar.bz2)
+* `适配patch (0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch): `  点击[下载](./new-world/0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch)
 
-├── chromium120
-│   ├── new-world
-│   │   └── 0001-CH120-new-world-Add-llvm-cross-build-support-for-loo.patch
-```
 
 然后基于已获取chromium源码的`src`目录进行如下操作：
 
