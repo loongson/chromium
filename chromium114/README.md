@@ -17,6 +17,7 @@
 * `cross-toolchain (llvm_install_15.0.7.tar.bz2): `  点击[下载](http://ftp.loongnix.cn/browser/build/toolchain/llvm_install_15.0.7.tar.bz2)
 * `适配patch (0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch): `  点击[下载](./old-world/0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch)
 * `适配patch (0001-Add-chromium-114-loongarch64-all-in-one-patch-v1.2.patch): `  点击[下载](./0001-Add-chromium-114-loongarch64-all-in-one-patch-v1.2.patch) `包含指令集加速`
+* `适配patch (0001-Swiftshader-LoongArch-Add-swiftshader-loongarch-supp.patch): `  点击[下载](./old-world/0001-Swiftshader-LoongArch-Add-swiftshader-loongarch-supp.patch) `swiftshader支持`
 
 然后基于已获取chromium源码的`src`目录进行如下操作：
 
@@ -43,9 +44,10 @@ $ patch -Np1 -i 0001-CH114-old-world-Add-llvm-cross-build-support-for-loo.patch
 ```
 
 **注意：** 
-> 1, old-world目录直接提供[build/cross-build.sh](./old-world/build/cross-build.sh)脚本，由于适配patch中的该文件是diff文件。
+> 1, old-world目录直接提供[build/cross-build.sh](./old-world/build/cross-build.sh)脚本，由于适配patch中的该文件是diff文件。  
   2, 基于同一套代码，如果您有同时构建兼容新、旧世界的需求，请打入`0001-Add-chromium-114-loongarch64-all-in-one-patch-v1.2.patch`，默认走的是旧世界分支； 设置`loongarch_is_legacy = false`，能够启用新世界分支。除此之外，还加入指令集加速的优化，以使您的chromium在loongarch平台运行的更流畅。  
-  3, 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（browser@loongson.cn）。
+  3, 如果您的项目需要支持swiftshader功能，请打入`0001-Swiftshader-LoongArch-Add-swiftshader-loongarch-supp.patch`，可能会有冲突。  
+  4, 如果版本差异导致此处patch打入失败，需要额外修补。有问题可以与我们联系（browser@loongson.cn）。
 
 完成上述操作后，我们还需要编译构建自动生成ffmpeg的配置文件，具体操作如下：
 
