@@ -136,24 +136,24 @@ $ ./build/cross-build.sh loongarch64    生成新世界构建目录 out/la64_cro
 
 `build/cross-build.sh`是我们额外提供的构建配置脚本，上述适配patch打入后就会包含该脚本。该脚本主要是完成GN构建参数配置及构建目录的设置。
 
-执行完上述脚本后会自动生成`out/la64-cross`或`out/la64_cross-new`（build/cross-build.sh脚本里面默认设置，如果想修改构建目录名称，请修改里面的root_build_dir）构建目录。
+执行完上述脚本后会自动生成`out/la64_cross`或`out/la64_cross-new`（build/cross-build.sh脚本里面默认设置，如果想修改构建目录名称，请修改里面的root_build_dir）构建目录。
 
 ## 四、构建 Chromium
 
 使用Ninja构建Chromium（目标为”chrome”）的命令是：
 
 ```shell
-$ ninja -C out/la64-cross chrome        构建旧世界
-$ ninja -C out/la64-cross-new chrome    构建新世界
+$ ninja -C out/la64_cross chrome        构建旧世界
+$ ninja -C out/la64_cross-new chrome    构建新世界
 ```
 
 (`ninja` 如果没有，请安装`ninja-build`系统包。)
 
 ## 五、运行 Chromium
 
-一旦您完成构建，您可以将`out/la64-cross`或`out/la64_cross-new`目录拷到Loongarch64架构机器上，然后运行浏览器：
+一旦您完成构建，您可以将`out/la64_cross`或`out/la64_cross-new`目录拷到Loongarch64架构机器上，然后运行浏览器：
 
 ```shell
-$ out/la64-cross/chrome                旧世界系统运行
-$ out/la64-cross-new/chrome            新世界系统运行
+$ out/la64_cross/chrome                旧世界系统运行
+$ out/la64_cross-new/chrome            新世界系统运行
 ```
