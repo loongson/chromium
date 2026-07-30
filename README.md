@@ -100,24 +100,25 @@ $ readelf -h a.out #查看输出中的Flags字段， '0x3' 表示旧世界， '0
 ```
 
 
-> 目前提供交叉构建说明的版本有：chromium98、chromium114、chromium120、chromium126、chromium132、chromium138和chromium144。
+> 目前提供交叉构建说明的版本有：ch98、ch114、ch120、ch126、ch132、ch138、ch144和ch150。
 
-> chromium98只提供旧世界构建支持，chromium114和chromium120支持新旧世界单独构建。
-> 126,132,138和144这四个版本还支持参数配置新旧世界兼容构建支持。
+> ch98只提供旧世界构建支持，ch114和ch120支持新旧世界单独构建。
+> ch126及之后版本全都支持参数配置新旧世界兼容构建。
 
 **需要额外注意的是适配patch的打入：**
 
-> * chromium98适配patch是基于98.0.4758.50生成
-> * chromium114适配patch是基于114.0.5735.17生成
-> * chromium120适配patch是基于120.0.6099.0生成
-> * chromium126适配patch是基于126.0.6478.59生成
-> * chromium132适配patch是基于132.0.6834.96生成
-> * chromium138适配patch是基于138.0.7204.17生成
-> * chromium144适配patch是基于144.0.7559.251生成
+> * ch98适配patch是基于98.0.4758.50生成
+> * ch114适配patch是基于114.0.5735.17生成
+> * ch120适配patch是基于120.0.6099.0生成
+> * ch126适配patch是基于126.0.6478.59生成
+> * ch132适配patch是基于132.0.6834.96生成
+> * ch138适配patch是基于138.0.7204.17生成
+> * ch144适配patch是基于144.0.7559.251生成
+> * ch150适配patch是基于150.0.7871.211生成
 >
 > 如果您下载的版本刚好是这些版本，是可以无缝打入的。但若有所偏离的话，可能会出现一些文件打不上的情况需要额外修补下。如果有问题可以与我们联系（browser@loongson.cn）。
 
-要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium144版本，那么必须先完成[Chromium144 构建配置](chromium144/README.md)。
+要想继续进行下一步，**必须先完成构建配置**(具体按照相应chromiumXXX中README.md完成)。假如你想构建Chromium150版本，那么必须先完成[Chromium150 构建配置](chromium150/README.md)。
 
 > chromium使用[Ninja](https://ninja-build.org)作为主要构建工具，使用称为[GN](https://gn.googlesource.com/gn/+/main/docs/quick_start.md)的工具生成.ninja文件。您可以创建任意数量的具有不同配置的构建目录。
 > 
@@ -132,7 +133,7 @@ $ readelf -h a.out #查看输出中的Flags字段， '0x3' 表示旧世界， '0
 98、114和120这三个版本执行：
 $ ./build/cross-build.sh
 
-126、132、138和144这四个版本同时执行：
+126及以上版本执行：
 $ ./build/cross-build.sh la64    生成旧世界构建目录 out/la64_cross
 $ ./build/cross-build.sh loongarch64    生成新世界构建目录 out/la64_cross-new
 ```
