@@ -53,7 +53,7 @@ $ tar -xjvf rust-1.92.0-nightly-cross.tar.bz2 -C /opt/
 $ tar -xjvf debian_bullseye_loong64-sysroot.tar.bz2 -C build/linux/
 ```
 
-`Release+Asserts-150.tar.bz2替换`third_party/llvm-build/Release+Asserts`目录：
+`Release+Asserts-150.tar.bz2`替换`third_party/llvm-build/Release+Asserts`目录：
 
 ```shell
 $ rm -rf third_party/llvm-build/Release+Asserts
